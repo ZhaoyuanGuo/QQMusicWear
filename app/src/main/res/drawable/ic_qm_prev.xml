@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- QQ音乐手机版上一首：双左三角 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,6.8 L5,12 L12,17.2 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M19,6.8 L12,12 L19,17.2 Z" />
+</vector>

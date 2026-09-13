@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- QQ音乐手机版播放键：实心三角（略圆润比例） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7.8,5.1 L18.6,11.2 L18.6,12.8 L7.8,18.9 Z" />
+</vector>

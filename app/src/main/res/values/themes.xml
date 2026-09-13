@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose-only Wear OS 应用：仅需要一个深色无标题栏系统主题 -->
+    <style name="Theme.QMusic" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/qm_window_background</item>
+    </style>
+</resources>
