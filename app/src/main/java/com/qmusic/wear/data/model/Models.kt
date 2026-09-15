@@ -13,17 +13,11 @@ data class Song(
     val songType: Int = 0,
     /** 是否会员歌曲（pay.pay_play / pay.payplay 非 0），列表显示 VIP 角标 */
     val vip: Boolean = false,
-) {
-    /** 300px 封面（列表用） */
-    val cover300: String get() = coverUrl(300)
-
+    /** 300px 封面（列表用；由音乐源插件生成） */
+    val cover300: String = "",
     /** 500px 封面（播放页/歌词页模糊背景用） */
-    val cover500: String get() = coverUrl(500)
-
-    private fun coverUrl(size: Int): String =
-        if (albumMid.isEmpty()) ""
-        else "https://y.gtimg.cn/music/photo_new/T002R${size}x${size}M000$albumMid.jpg?max_age=2592000"
-}
+    val cover500: String = "",
+)
 
 /** 歌单 */
 data class Playlist(
@@ -63,6 +57,8 @@ data class ResolvedUrl(
     val ekey: String = "",
     val encrypted: Boolean = false,
     val prefix: String = "",
+    /** 文件扩展名（由音乐源插件按前缀给出，下载落盘用） */
+    val ext: String = "mp3",
 )
 
 /** 播放模式 */
@@ -72,23 +68,13 @@ enum class PlayMode(val label: String) {
     RANDOM("随机播放"),
 }
 
-/** 音质（label 用于界面展示，chain 为 vkey 解析文件名前缀链，按优先级排列） */
+/**
+ * 音质（label 用于界面展示）。
+ * 音质 -> 文件名前缀链由音乐源插件提供（SourceManager.prefixToQuality）。
+ */
 enum class Quality(val label: String) {
     STANDARD("标准"),
     HIGH("高品"),
     LOSSLESS("无损"),
     HI_RES("Hi-Res");
-
-    /** 依次尝试的文件名前缀（第一个解析出 purl 的生效） */
-    fun chain(): List<String> = when (this) {
-        STANDARD -> listOf("M500", "C200")
-        HIGH -> listOf("M800", "M500", "C400")
-        LOSSLESS -> listOf("AI00", "F0M0", "M800")
-        HI_RES -> listOf("AIM0", "O800", "O600", "F0M0", "AI00", "M800")
-    }
-
-    companion object {
-        /** 由文件名前缀反查音质（用于播放页展示当前音质） */
-        fun fromPrefix(prefix: String): Quality? = entries.firstOrNull { q -> q.chain().contains(prefix) }
-    }
 }

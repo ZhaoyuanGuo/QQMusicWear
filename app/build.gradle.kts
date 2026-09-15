@@ -12,8 +12,8 @@ android {
         applicationId = "com.qmusic.wear"
         minSdk = 33
         targetSdk = 36
-        versionCode = 22
-        versionName = "1.8.3"
+        versionCode = 28
+        versionName = "1.9.0"
     }
 
     buildTypes {
@@ -74,10 +74,16 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
+    // JS 引擎（音乐源插件运行时；纯 Java 实现无 ABI 限制）
+    implementation("org.mozilla:rhino:1.7.15")
+
     // 图片加载（Coil3 必须显式引入网络组件，否则 http 封面无法加载）
     implementation("io.coil-kt.coil3:coil-compose:3.3.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
 
     // 封面主色提取（卡片流/播放页自适应配色）
     implementation("androidx.palette:palette-ktx:1.0.0")
+
+    // 单元测试（纯 JVM：签名校验 / DTO 契约）
+    testImplementation("junit:junit:4.13.2")
 }

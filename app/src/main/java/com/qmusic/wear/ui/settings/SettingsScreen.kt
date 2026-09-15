@@ -77,18 +77,23 @@ fun SettingsScreen(
         )
     }
 
-    // 播放链路自检结果
-    val testResult = ui.selfTestResult
-    if (testResult != null && testResult.isNotEmpty()) {
-        AlertDialog(
-            visible = true,
-            onDismissRequest = { vm.dismissSelfTest() },
-            title = { Text("自检结果") },
-            text = { Text(testResult) },
-            confirmButton = {
-                Button(onClick = { vm.dismissSelfTest() }) { Text("好") }
-            },
-        )
+    // 日志提取结果：Toast 提示导出路径
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(ui.logExportMessage) {
+        val msg = ui.logExportMessage
+        if (!msg.isNullOrEmpty()) {
+            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+            vm.dismissLogExport()
+        }
+    }
+
+    // 音乐源更新结果：Toast 提示
+    LaunchedEffect(ui.sourceUpdateMessage) {
+        val msg = ui.sourceUpdateMessage
+        if (!msg.isNullOrEmpty()) {
+            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+            vm.dismissSourceUpdate()
+        }
     }
 
     ScreenScaffold(
@@ -240,25 +245,136 @@ fun SettingsScreen(
                 )
             }
 
-            // ---- 播放链路自检 ----
+            // ---- 音乐源 ----
+            item { SectionHeader("音乐源") }
             item {
-                GlassRow(onClick = { vm.runSelfTest() }) {
+                GlassRow(onClick = { vm.updateSource() }) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_quality),
+                        painter = painterResource(R.drawable.ic_refresh),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(17.dp),
+                    )
+                    Spacer(Modifier.size(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (ui.sourceUpdateMessage == "") "更新音乐源" else "更新中…",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Text(
+                            if (ui.sourceVersion > 0) "当前版本 v${ui.sourceVersion}" else "未加载",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            item {
+                val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+                ) { uri ->
+                    if (uri != null) {
+                        val bytes = runCatching {
+                            ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        }.getOrNull()
+                        if (bytes != null) vm.importSource(bytes)
+                    }
+                }
+                GlassRow(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_download),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(17.dp),
+                    )
+                    Spacer(Modifier.size(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("从存储导入源", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            "镜像全部失效时的兜底",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
+            // ---- 提取日志 ----
+            item {
+                GlassRow(onClick = { vm.extractLog() }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_download),
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(17.dp),
                     )
                     Spacer(Modifier.size(10.dp))
                     Text(
-                        if (ui.selfTestResult == "") "自检运行中…" else "播放自检（诊断）",
+                        if (ui.logExportMessage == "") "提取中…" else "提取日志（诊断）",
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
             }
 
+            // ---- 通用：开屏提示开关 ----
+            item {
+                GlassRow(onClick = { vm.setLaunchToast(!ui.launchToastEnabled) }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_volume),
+                        contentDescription = null,
+                        tint = if (ui.launchToastEnabled) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(17.dp),
+                    )
+                    Spacer(Modifier.size(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "开屏提示",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (ui.launchToastEnabled) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            "启动时显示「仅供学习交流使用」",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    TogglePill(checked = ui.launchToastEnabled)
+                }
+            }
+
             item { Spacer(Modifier.height(40.dp)) }
         }
+    }
+}
+
+/** 开关胶囊：小型 iOS 风格 toggle 指示器（选中绿底右浮点，未选中灰底左浮点） */
+@Composable
+private fun TogglePill(checked: Boolean) {
+    Box(
+        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
+        modifier = Modifier
+            .size(width = 26.dp, height = 16.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+            .background(
+                if (checked) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            )
+            .padding(horizontal = 2.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(Color.White),
+        )
     }
 }
 

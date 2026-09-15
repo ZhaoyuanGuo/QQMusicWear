@@ -27,9 +27,11 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.ui.components.BlurCoverBackground
+import com.qmusic.wear.ui.components.SwipeBackBox
 
 @Composable
 fun LyricsScreen(
+    onBack: () -> Unit = {},
     vm: LyricsViewModel = viewModel(),
 ) {
     val now by ServiceLocator.player.state.collectAsStateWithLifecycle()
@@ -48,8 +50,10 @@ fun LyricsScreen(
         now.song?.let { vm.loadLyric(it) }
     }
 
-    // 背景在屏幕层级铺满整个圆屏（放进 contentPadding 里会被缩成方形显示不全）
-    Box(Modifier.fillMaxSize()) {
+    // 背景在屏幕层级铺满整个圆屏（放进 contentPadding 里会被缩成方形显示不全）；
+    // 外包 SwipeBackBox：右滑返回播放页
+    SwipeBackBox(onBack = onBack) {
+        Box(Modifier.fillMaxSize()) {
         BlurCoverBackground(
             coverUrl = now.song?.cover500.orEmpty(),
             blurRadius = 56.dp,
@@ -121,6 +125,7 @@ fun LyricsScreen(
                 }
             }
         }
+    }
     }
 }
 

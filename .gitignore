@@ -13,3 +13,6 @@ build/
 *.jks
 *.keystore
 crash.log
+
+# 音乐源签名私钥（仅开发者本地保存，公钥随仓库提交）
+tools/source-signing/source_signing_private.key

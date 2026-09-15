@@ -3,11 +3,13 @@ package com.qmusic.wear.ui.player
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -32,18 +34,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
@@ -55,59 +58,44 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Slider
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
+import coil3.compose.AsyncImage
 import com.qmusic.wear.R
 import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.data.model.Quality
 import com.qmusic.wear.ui.components.BlurCoverBackground
-import com.qmusic.wear.ui.components.CoverColors
 import com.qmusic.wear.ui.components.EdgeProgressRing
 import com.qmusic.wear.ui.components.rememberCoverColor
-import com.qmusic.wear.util.msTo_mmss
 
 /**
- * 播放页（QQ 音乐手机版控件风格，480×480 圆屏）：
- * - 背景：封面高斯模糊铺满全屏
- * - 进度：环绕屏幕边缘的进度环（顶部缺口给时间显示）
- * - 中心：歌名/歌手 + 双三角切换键 + 品牌绿播放键 + 副控制（无封面图）
- * - 左右滑或点歌词按钮进歌词页
+ * 播放页（参考磁音手表版圆盘布局，480×480 圆屏）：
+ * - 背景：封面高斯模糊铺满全屏（One UI Watch 质感）
+ * - 中央：专辑封面大圆盘，歌名/歌手在盘内上部，上一首/播放/下一首精确位于盘心
+ * - 底部：一排小圆钮（音量 / 喜欢 / 音质 / 下载），播放模式入口移至队列页
+ * - 保留我们自己的环绕屏幕边缘进度环；
+ *   手势：手指左滑进歌词页、右滑返回主页、上滑进队列
  */
 @Composable
 fun PlayerScreen(
     onOpenLyrics: () -> Unit,
     onOpenDownloads: () -> Unit = {},
+    onOpenQueue: () -> Unit = {},
+    onBack: () -> Unit = {},
     vm: PlayerViewModel = viewModel(),
 ) {
     val now by ServiceLocator.player.state.collectAsStateWithLifecycle()
-    val playMode by ServiceLocator.player.playMode.collectAsStateWithLifecycle()
     val ui by vm.ui.collectAsStateWithLifecycle()
     var swipeAcc by remember { mutableFloatStateOf(0f) }
+    var swipeAccY by remember { mutableFloatStateOf(0f) }
 
     val progress = if (now.durationMs > 0) {
         (now.positionMs.toFloat() / now.durationMs).coerceIn(0f, 1f)
     } else 0f
 
     Box(Modifier.fillMaxSize()) {
-        // 封面高斯模糊铺满整个圆形屏幕
-        BlurCoverBackground(coverUrl = now.song?.cover500.orEmpty(), blurRadius = 46.dp, scrim = 0.62f)
+        // 封面高斯模糊铺满全屏（修复：封面只在小圆盘内、四周留黑的问题）
+        BlurCoverBackground(coverUrl = now.song?.cover500.orEmpty())
 
-        // 自适应主色晕染（借鉴官方「播放器适配歌曲自动变色」）：封面主色径向渐变叠加
-        val coverTint = rememberCoverColor(now.song?.cover500.orEmpty())
-        val tunedTint = remember(coverTint) {
-            coverTint?.let { CoverColors.tune(it, minLum = 0.18f, maxLum = 0.42f) }
-        }
-        if (tunedTint != null) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.radialGradient(
-                            listOf(tunedTint.copy(alpha = 0.32f), Color.Transparent),
-                        ),
-                    ),
-            )
-        }
-
-        // 环绕屏幕边界的播放进度（不受内容边距影响，正圆居中）
+        // 环绕屏幕边界的播放进度（保留我们自己的环形进度条，不受内容边距影响）
         EdgeProgressRing(
             progress = progress,
             modifier = Modifier
@@ -129,9 +117,25 @@ fun PlayerScreen(
                                 swipeAcc += amount
                             },
                             onDragEnd = {
-                                // 左右滑均可进入歌词页
-                                if (kotlin.math.abs(swipeAcc) > 100f) onOpenLyrics()
+                                // 手指向左滑进歌词页，向右滑返回主页（页面流方向，与二级页右滑返回一致）
+                                when {
+                                    swipeAcc < -100f -> onOpenLyrics()
+                                    swipeAcc > 100f -> onBack()
+                                }
                                 swipeAcc = 0f
+                            },
+                        )
+                    }
+                    .pointerInput(Unit) {
+                        // 上滑进入播放队列（磁音同款二级界面入口）
+                        detectVerticalDragGestures(
+                            onVerticalDrag = { change, amount ->
+                                change.consume()
+                                swipeAccY += amount
+                            },
+                            onDragEnd = {
+                                if (swipeAccY < -80f) onOpenQueue()
+                                swipeAccY = 0f
                             },
                         )
                     },
@@ -173,7 +177,6 @@ fun PlayerScreen(
 
                     else -> PlayerContent(
                         now = now,
-                        playMode = playMode,
                         vm = vm,
                         onOpenDownloads = onOpenDownloads,
                     )
@@ -186,129 +189,127 @@ fun PlayerScreen(
 @Composable
 private fun PlayerContent(
     now: com.qmusic.wear.data.player.NowPlaying,
-    playMode: com.qmusic.wear.data.model.PlayMode,
     vm: PlayerViewModel,
     onOpenDownloads: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize()) {
-        // ---- 顶部文字块：圆形小封面 / 歌名 / 歌手 / 时间（不侵入底部弧形按钮区） ----
-        Column(
-            Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 26.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // ---- 中央大圆盘（磁音同款）：封面填充，占短边 76%，圆心略上移给底部控件留位 ----
+        val disc = minOf(maxWidth, maxHeight) * 0.76f
+        val coverTint = rememberCoverColor(now.song?.cover500.orEmpty())
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(y = (-10).dp)
+                .size(disc)
+                .clip(CircleShape)
+                .background(coverTint ?: MaterialTheme.colorScheme.surfaceContainerHigh),
         ) {
-            // 圆形小封面（借鉴官方播放页封面位，圆屏适配：小圆图 + 细描边）
-            val cover = now.song?.cover500.orEmpty()
-            if (cover.isNotEmpty()) {
-                coil3.compose.AsyncImage(
-                    model = cover,
-                    contentDescription = null,
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .border(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.22f), CircleShape),
-                )
-                Spacer(Modifier.height(5.dp))
-            }
-            Text(
-                text = now.song?.name.orEmpty(),
-                style = MaterialTheme.typography.titleSmall,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 26.dp),
+            AsyncImage(
+                model = now.song?.cover500.orEmpty(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
             )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = now.song?.singers.orEmpty(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 30.dp),
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = "${now.positionMs.msTo_mmss()} / ${now.durationMs.msTo_mmss()}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // 压暗保证盘内文字可读
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.30f)),
             )
 
-            Spacer(Modifier.height(10.dp))
-
-            // 主控制行（QQ 音乐手机版）：双三角切换键 + 品牌绿播放键
+            // 控制键组：精确位于盘心——圆心处横向弦最宽，小圆屏也不会裁掉两侧切歌键
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.align(Alignment.Center),
             ) {
                 QmIconButton(
                     resId = R.drawable.ic_qm_prev,
                     contentDescription = stringResource(R.string.cd_prev),
-                    iconSize = 22.dp,
+                    iconSize = 18.dp,
                     onClick = { ServiceLocator.player.previous() },
                 )
                 QmPlayPauseButton(playing = now.isPlaying)
                 QmIconButton(
                     resId = R.drawable.ic_qm_next,
                     contentDescription = stringResource(R.string.cd_next),
-                    iconSize = 22.dp,
+                    iconSize = 18.dp,
                     onClick = { ServiceLocator.player.next() },
+                )
+            }
+
+            // 歌名/歌手：盘内上部（避开盘心控件组）
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = disc * 0.15f),
+            ) {
+                Text(
+                    text = now.song?.name.orEmpty(),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = now.song?.singers.orEmpty(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.72f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 14.dp),
                 )
             }
         }
 
-        // ---- 副控制：沿进度环内侧底部弧形排列（避开顶部文字块与进度环） ----
-        SubControlsArc(
-            playMode = playMode,
+        // ---- 底部副控件行（磁音：播放页下方一排小圆钮），播放模式入口已移至队列页 ----
+        SubControlsRow(
+            now = now,
             vm = vm,
             onOpenDownloads = onOpenDownloads,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp),
         )
     }
 }
 
 /**
- * 底部弧形副控件组：五个小圆钮以屏幕中心为圆心、沿边缘进度环内侧的
- * 圆弧（42°..138°）排布，既贴合圆屏轮廓又不与进度环和顶部文字块重合。
- * 顺序：播放模式 / 喜欢 / 音量 / 音质 / 下载。歌词入口保留在左右滑手势。
+ * 底部副控件行：音量 / 喜欢 / 音质 / 下载 四个小圆钮横排。
+ * 播放模式切换入口移至队列页头部（磁音同款），歌词入口仅为左右滑手势。
  */
 @Composable
-private fun SubControlsArc(
-    playMode: com.qmusic.wear.data.model.PlayMode,
+private fun SubControlsRow(
+    now: com.qmusic.wear.data.player.NowPlaying,
     vm: PlayerViewModel,
     onOpenDownloads: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        // 半径 = 屏幕半径 - 进度环区 - 控件半径 - 间隙
-        val radius = (minOf(maxWidth, maxHeight) / 2) - 30.dp
-        // 屏幕角度：0°=正右，90°=正下；五个角度左右对称覆盖底部弧
-        val angles = listOf(42f, 66f, 90f, 114f, 138f)
-        val download = vm.ui.collectAsStateWithLifecycle().value.download
-        val now by ServiceLocator.player.state.collectAsStateWithLifecycle()
-        val downloads by ServiceLocator.downloads.downloadsFlow.collectAsStateWithLifecycle()
-        val likedMids by ServiceLocator.repository.likedMids.collectAsStateWithLifecycle()
-        val curSong = now.song
-        val liked = curSong != null && likedMids.contains(curSong.mid)
+    val download = vm.ui.collectAsStateWithLifecycle().value.download
+    val downloads by ServiceLocator.downloads.downloadsFlow.collectAsStateWithLifecycle()
+    val likedMids by ServiceLocator.repository.likedMids.collectAsStateWithLifecycle()
+    val curSong = now.song
+    val liked = curSong != null && likedMids.contains(curSong.mid)
+    val downloaded = curSong?.let { s -> downloads.any { it.song.mid == s.mid } } == true
 
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier,
+    ) {
         SubControlChip(
-            resId = when (playMode) {
-                com.qmusic.wear.data.model.PlayMode.SEQUENTIAL -> R.drawable.ic_repeat
-                com.qmusic.wear.data.model.PlayMode.REPEAT_ONE -> R.drawable.ic_repeat_one
-                com.qmusic.wear.data.model.PlayMode.RANDOM -> R.drawable.ic_shuffle
-            },
-            contentDescription = playMode.label,
-            tint = if (playMode == com.qmusic.wear.data.model.PlayMode.SEQUENTIAL) {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                MaterialTheme.colorScheme.primary
-            },
-            onClick = { vm.cyclePlayMode() },
-            modifier = Modifier
-                .align(Alignment.Center)
-                .arcOffset(angles[0], radius),
+            resId = R.drawable.ic_volume,
+            contentDescription = stringResource(R.string.player_volume),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            onClick = { vm.toggleVolume() },
         )
         // 红心收藏：单击加入/移出「我喜欢」（与手机端账号联动）
         SubControlChip(
@@ -327,37 +328,18 @@ private fun SubControlsArc(
                     }
                 }
             },
-            modifier = Modifier
-                .align(Alignment.Center)
-                .arcOffset(angles[1], radius),
-        )
-        SubControlChip(
-            resId = R.drawable.ic_volume,
-            contentDescription = stringResource(R.string.player_volume),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            onClick = { vm.toggleVolume() },
-            modifier = Modifier
-                .align(Alignment.Center)
-                .arcOffset(angles[2], radius),
         )
         SubControlChip(
             resId = R.drawable.ic_quality,
             contentDescription = stringResource(R.string.player_quality),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             onClick = { vm.toggleQuality() },
-            modifier = Modifier
-                .align(Alignment.Center)
-                .arcOffset(angles[3], radius),
         )
         // 下载控件：空闲=下载图标 / 下载中=进度环 / 完成=对勾
-        val downloaded = now.song?.let { s -> downloads.any { it.song.mid == s.mid } } == true
         when {
             download.running -> Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .arcOffset(angles[4], radius)
-                    .size(28.dp),
+                modifier = Modifier.size(28.dp),
             ) {
                 CircularProgressIndicator(
                     progress = { download.progress },
@@ -373,9 +355,6 @@ private fun SubControlsArc(
                 onLongClick = {
                     if (curSong != null) ServiceLocator.downloads.remove(curSong.mid)
                 },
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .arcOffset(angles[4], radius),
             )
             else -> SubControlChip(
                 resId = R.drawable.ic_download,
@@ -386,26 +365,12 @@ private fun SubControlsArc(
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
                 onClick = { vm.downloadCurrent() },
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .arcOffset(angles[4], radius),
             )
         }
     }
 }
 
-/** 极坐标偏移：需配合 align(Center) 使用，偏移到 (radius, angle) 处 */
-private fun Modifier.arcOffset(angleDeg: Float, radius: androidx.compose.ui.unit.Dp): Modifier =
-    offset {
-        val rad = Math.toRadians(angleDeg.toDouble())
-        val r = radius.roundToPx()
-        IntOffset(
-            (r * kotlin.math.cos(rad)).roundToInt(),
-            (r * kotlin.math.sin(rad)).roundToInt(),
-        )
-    }
-
-/** 裸图标按钮（QQ 音乐手机版切换键样式：白色双三角，无底板） */
+/** 裸图标按钮（磁音样式：半透明白色圆底 + 白色图标） */
 @Composable
 private fun QmIconButton(
     resId: Int,
@@ -416,7 +381,9 @@ private fun QmIconButton(
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
-            .size(iconSize + 12.dp)
+            .size(iconSize + 16.dp)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.16f))
             .clickable(onClick = onClick),
     ) {
         Icon(
@@ -449,25 +416,64 @@ private fun QmPlayPauseButton(playing: Boolean) {
         // 外圈光晕
         Box(
             Modifier
-                .size(58.dp)
+                .size(52.dp)
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.20f), CircleShape),
         )
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(48.dp)
+                .size(44.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary)
                 .clickable { ServiceLocator.player.togglePlayPause() },
         ) {
-            Icon(
-                painter = if (playing) painterResource(R.drawable.ic_qm_pause)
-                else painterResource(R.drawable.ic_qm_play),
-                contentDescription = stringResource(R.string.cd_play_pause),
-                tint = Color.White,
-                modifier = Modifier.size(24.dp),
-            )
+            // 线条形变图标：播放三角 ↔ 暂停双杠，按路径逐点插值流动（非缩放/淡入淡出）
+            PlayPauseMorphIcon(playing = playing)
         }
+    }
+}
+
+/**
+ * 线条形变图标：播放三角 ↔ 暂停双杠。
+ * 原理：两个图标都拆成结构相同的两个四边形路径（各 4 个角点），
+ * 形变时逐点插值——双杠的内缘流动倾斜成三角的两条斜边，外缘收拢汇成三角尖。
+ */
+@Composable
+private fun PlayPauseMorphIcon(playing: Boolean) {
+    // 形变进度：0 = 播放三角，1 = 暂停双杠（轻微回弹让线条有"流动感"）
+    val morph by animateFloatAsState(
+        targetValue = if (playing) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow),
+        label = "play_morph",
+    )
+    Canvas(Modifier.size(22.dp)) {
+        val s = size.minDimension / 24f
+        fun pt(v: Pair<Float, Float>) = Offset(v.first * s, v.second * s)
+
+        // 24 视口下的角点（顺时针：左上 → 右上 → 右下 → 左下）
+        // 播放三角（拆左右两半，保证与双杠同为四边形可插值；右半右侧两点重合于尖角）
+        val playL = listOf(Pair(7f, 5f), Pair(13f, 8.5f), Pair(13f, 15.5f), Pair(7f, 19f))
+        val playR = listOf(Pair(13f, 8.5f), Pair(19f, 12f), Pair(19f, 12f), Pair(13f, 15.5f))
+        // 暂停双杠
+        val pauseL = listOf(Pair(7.4f, 5f), Pair(11f, 5f), Pair(11f, 19f), Pair(7.4f, 19f))
+        val pauseR = listOf(Pair(13f, 5f), Pair(16.6f, 5f), Pair(16.6f, 19f), Pair(13f, 19f))
+
+        fun morphQuad(from: List<Pair<Float, Float>>, to: List<Pair<Float, Float>>): Path {
+            val path = Path()
+            val pts = from.indices.map { i ->
+                val a = pt(from[i])
+                val b = pt(to[i])
+                Offset(a.x + (b.x - a.x) * morph, a.y + (b.y - a.y) * morph)
+            }
+            path.moveTo(pts[0].x, pts[0].y)
+            for (i in 1..3) path.lineTo(pts[i].x, pts[i].y)
+            path.close()
+            return path
+        }
+
+        val white = Color.White
+        drawPath(morphQuad(playL, pauseL), white)
+        drawPath(morphQuad(playR, pauseR), white)
     }
 }
 

@@ -1,7 +1,6 @@
 package com.qmusic.wear.data.download
 
 import android.content.Context
-import com.qmusic.wear.data.api.QMusicApi
 import com.qmusic.wear.data.api.int
 import com.qmusic.wear.data.api.long
 import com.qmusic.wear.data.api.str
@@ -79,11 +78,15 @@ class DownloadManager(context: Context, private val http: okhttp3.OkHttpClient) 
         resolved: ResolvedUrl,
         onProgress: (Float) -> Unit = {},
     ): Downloaded = withContext(Dispatchers.IO) {
-        val ext = extOf(resolved.prefix)
+        val ext = resolved.ext.ifEmpty { "mp3" }
         val req = okhttp3.Request.Builder()
             .url(resolved.url)
-            .header("User-Agent", QMusicApi.WEB_UA)
-            .header("Referer", "https://y.qq.com/")
+            .apply {
+                // 播放/下载请求头由音乐源插件 manifest 提供（防盗链）
+                com.qmusic.wear.data.source.SourceManager.playbackHeaders.forEach { (k, v) ->
+                    header(k, v)
+                }
+            }
             .build()
         http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) error("下载失败 HTTP ${resp.code}")
@@ -164,12 +167,6 @@ class DownloadManager(context: Context, private val http: okhttp3.OkHttpClient) 
         val list = _downloadsFlow.value.filterNot { it.song.mid == record.song.mid } + record
         _downloadsFlow.value = list
         persist(list)
-    }
-
-    private fun extOf(prefix: String): String = when (prefix) {
-        "C200", "C400", "C600" -> "m4a"
-        "AI00" -> "flac"
-        else -> "mp3"
     }
 
     // ------------------------- 持久化 -------------------------

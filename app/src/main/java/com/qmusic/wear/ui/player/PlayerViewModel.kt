@@ -125,10 +125,10 @@ class PlayerViewModel : ViewModel() {
         }
     }
 
-    /** 由当前生效的文件名前缀得到音质名 */
+    /** 由当前生效的文件名前缀得到音质名（前缀映射由音乐源插件提供） */
     fun currentQualityLabel(qualityPrefix: String): String {
         if (qualityPrefix.isEmpty()) return "标准"
-        return Quality.fromPrefix(qualityPrefix)?.label ?: "标准"
+        return com.qmusic.wear.data.source.SourceManager.prefixToQuality[qualityPrefix]?.label ?: "标准"
     }
 
     companion object {

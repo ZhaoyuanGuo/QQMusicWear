@@ -83,6 +83,15 @@ class SettingsStore(context: Context) {
     private val _playModeFlow = MutableStateFlow(readPlayMode())
     val playModeFlow: StateFlow<PlayMode> = _playModeFlow.asStateFlow()
 
+    /** 开屏提示（启动 Toast「仅供学习交流使用」）开关 */
+    private val _launchToastFlow = MutableStateFlow(prefs.getBoolean(KEY_LAUNCH_TOAST, true))
+    val launchToastFlow: StateFlow<Boolean> = _launchToastFlow.asStateFlow()
+
+    fun setLaunchToast(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LAUNCH_TOAST, enabled).apply()
+        _launchToastFlow.value = enabled
+    }
+
     private fun readPlayMode(): PlayMode =
         runCatching { PlayMode.valueOf(prefs.getString(KEY_PLAY_MODE, PlayMode.SEQUENTIAL.name)!!) }
             .getOrDefault(PlayMode.SEQUENTIAL)
@@ -113,6 +122,7 @@ class SettingsStore(context: Context) {
         const val KEY_PLAY_MODE = "play_mode"
         const val KEY_QUALITY = "quality"
         const val KEY_DOWNLOAD_QUALITY = "download_quality"
+        const val KEY_LAUNCH_TOAST = "launch_toast"
     }
 }
 
@@ -219,5 +229,29 @@ class SearchHistoryStore(context: Context) {
     companion object {
         private const val KEY_HISTORY = "search_history"
         private const val MAX_HISTORY = 10
+    }
+}
+
+/**
+ * 用户协议：按版本号记录已同意状态。
+ * 首启未同意时弹窗；协议内容修订后把 [AGREEMENT_VERSION] +1，老用户会重新收到弹窗。
+ */
+class AgreementStore(context: Context) {
+
+    private val prefs = context.getSharedPreferences("qmusic_agreement", Context.MODE_PRIVATE)
+
+    /** 是否已同意当前版本协议 */
+    val isAgreed: Boolean
+        get() = prefs.getInt(KEY_AGREED_VERSION, -1) >= AGREEMENT_VERSION
+
+    fun setAgreed() {
+        prefs.edit().putInt(KEY_AGREED_VERSION, AGREEMENT_VERSION).apply()
+    }
+
+    companion object {
+        private const val KEY_AGREED_VERSION = "agreed_version"
+
+        /** 协议内容变更时 +1，老用户将重新收到弹窗 */
+        const val AGREEMENT_VERSION = 3
     }
 }

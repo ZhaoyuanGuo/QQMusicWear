@@ -21,8 +21,14 @@ data class SettingsUiState(
     /** 睡眠定时（分钟，0=关闭） */
     val sleepMinutes: Int = 0,
     val showLogoutConfirm: Boolean = false,
-    /** 播放链路自检：null=未跑，""=跑动中，非空=结果 */
-    val selfTestResult: String? = null,
+    /** 开屏提示（启动 Toast）开关 */
+    val launchToastEnabled: Boolean = true,
+    /** 日志提取状态：null=空闲，""=提取中，非空=结果提示 */
+    val logExportMessage: String? = null,
+    /** 音乐源版本 */
+    val sourceVersion: Int = 0,
+    /** 源更新状态：null=空闲，""=更新中，非空=结果提示 */
+    val sourceUpdateMessage: String? = null,
 )
 
 class SettingsViewModel : ViewModel() {
@@ -42,6 +48,8 @@ class SettingsViewModel : ViewModel() {
             _ui.value = _ui.value.copy(
                 quality = ServiceLocator.settingsStore.quality(),
                 downloadQuality = ServiceLocator.settingsStore.downloadQuality(),
+                launchToastEnabled = ServiceLocator.settingsStore.launchToastFlow.value,
+                sourceVersion = com.qmusic.wear.data.source.SourceManager.currentVersion(),
             )
             val cred = ServiceLocator.credential.value
             if (cred.isLogged) {
@@ -79,18 +87,82 @@ class SettingsViewModel : ViewModel() {
         _ui.value = _ui.value.copy(showLogoutConfirm = true)
     }
 
-    /** 播放链路自检：vkey 三组探针（免费/双mid/付费歌），结果弹窗展示 */
-    fun runSelfTest() {
-        _ui.value = _ui.value.copy(selfTestResult = "")
-        viewModelScope.launch {
-            val result = runCatching { ServiceLocator.repository.selfTest() }
-                .getOrElse { "自检异常: ${it.message?.take(60)}" }
-            _ui.value = _ui.value.copy(selfTestResult = result)
+    /** 开屏提示开关：控制启动时是否弹「仅供学习交流使用」Toast */
+    fun setLaunchToast(enabled: Boolean) {
+        _ui.value = _ui.value.copy(launchToastEnabled = enabled)
+        ServiceLocator.settingsStore.setLaunchToast(enabled)
+    }
+
+    /** 提取日志：崩溃落盘 + 本进程 logcat 尾部，写出为文本文件并返回展示提示 */
+    fun extractLog() {
+        if (_ui.value.logExportMessage == "") return
+        _ui.value = _ui.value.copy(logExportMessage = "")
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val ctx = ServiceLocator.appContextOrNull() ?: run {
+                _ui.value = _ui.value.copy(logExportMessage = "提取失败：应用未初始化")
+                return@launch
+            }
+            val sb = StringBuilder()
+            runCatching {
+                val f = java.io.File(ctx.filesDir, "crash.log")
+                if (f.exists()) sb.append("== crash.log ==\n").append(f.readText().takeLast(8000))
+            }
+            runCatching {
+                val p = android.os.Process.myPid()
+                val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "--pid=$p", "-t", "800"))
+                val out = proc.inputStream.bufferedReader().readText()
+                proc.waitFor()
+                sb.append("\n\n== logcat(pid=").append(p).append(") ==\n").append(out.takeLast(12000))
+            }
+            val dir = ctx.getExternalFilesDir(null) ?: ctx.filesDir
+            val out = java.io.File(dir, "qmusic_log_${System.currentTimeMillis()}.txt")
+            runCatching { out.writeText(sb.toString()) }
+            val msg = if (sb.isEmpty()) "暂无日志" else "已导出 ${out.absolutePath}"
+            _ui.value = _ui.value.copy(logExportMessage = msg)
         }
     }
 
-    fun dismissSelfTest() {
-        _ui.value = _ui.value.copy(selfTestResult = null)
+    fun dismissLogExport() {
+        _ui.value = _ui.value.copy(logExportMessage = null)
+    }
+
+    /** 更新音乐源：从镜像重新下载并重载引擎，结果经 Toast 提示 */
+    fun updateSource() {
+        if (_ui.value.sourceUpdateMessage == "") return
+        _ui.value = _ui.value.copy(sourceUpdateMessage = "")
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val ok = runCatching { com.qmusic.wear.data.source.SourceManager.downloadNow() }
+                .getOrDefault(false)
+            _ui.value = _ui.value.copy(
+                sourceUpdateMessage = if (ok) {
+                    "音乐源已更新到 v${com.qmusic.wear.data.source.SourceManager.currentVersion()}"
+                } else {
+                    "音乐源更新失败：所有镜像均不可达"
+                },
+                sourceVersion = com.qmusic.wear.data.source.SourceManager.currentVersion(),
+            )
+        }
+    }
+
+    /** 从存储导入源文件（镜像全部失效时的兜底），结果经 Toast 提示 */
+    fun importSource(bytes: ByteArray) {
+        if (_ui.value.sourceUpdateMessage == "") return
+        _ui.value = _ui.value.copy(sourceUpdateMessage = "")
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val err = runCatching {
+                com.qmusic.wear.data.source.SourceManager.importScript(
+                    bytes.toString(Charsets.UTF_8),
+                )
+            }.getOrDefault("读取文件失败")
+            _ui.value = _ui.value.copy(
+                sourceUpdateMessage = err ?: "音乐源导入成功（v${com.qmusic.wear.data.source.SourceManager.currentVersion()}）",
+                sourceVersion = com.qmusic.wear.data.source.SourceManager.currentVersion(),
+            )
+        }
+    }
+
+    fun dismissSourceUpdate() {
+        _ui.value = _ui.value.copy(sourceUpdateMessage = null)
     }
 
     fun cancelLogout() {

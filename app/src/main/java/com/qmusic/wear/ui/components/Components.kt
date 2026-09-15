@@ -4,11 +4,14 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -19,10 +22,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -33,6 +41,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -521,4 +530,80 @@ fun SectionHeader(title: String, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .padding(start = 10.dp, top = 3.dp, bottom = 1.dp),
     )
+}
+
+/**
+ * 右滑返回上一页：二级页内容包裹层。
+ * 手指在屏幕任意位置向右拖动累计超过阈值即触发 onBack（与系统边缘返回手势同向，
+ * 即页面流中「上一页在左侧」的标准导航模型）；与页内纵向滚动列表互不干扰。
+ */
+@Composable
+fun SwipeBackBox(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    threshold: Float = 90f,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val latestBack by rememberUpdatedState(onBack)
+    var swipeAcc by remember { mutableFloatStateOf(0f) }
+    Box(
+        modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { swipeAcc = 0f },
+                    onDragEnd = { swipeAcc = 0f },
+                    onDragCancel = { swipeAcc = 0f },
+                ) { _, dragAmount ->
+                    swipeAcc += dragAmount
+                    if (swipeAcc > threshold) {
+                        // 手指向右滑 → 返回上一页
+                        latestBack()
+                        swipeAcc = 0f
+                    }
+                }
+            },
+    ) {
+        content()
+    }
+}
+
+/**
+ * 实况胶囊（One UI 8 Watch 风格）：
+ * 固定尺寸迷你玻璃胶囊——圆形封面 + 歌名，歌名超长时在胶囊内滚动（胶囊大小不变），点击进播放页。
+ * 全局悬浮：由 MainActivity 覆盖在所有页面（协议页除外）底部。
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+fun LiveCapsule(
+    coverUrl: String,
+    songName: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            // 固定宽度：不随歌名长短改变大小
+            .width(108.dp)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f))
+            .border(0.5.dp, Color.White.copy(alpha = 0.14f), shape)
+            .clickable(onClick = onClick)
+            .padding(start = 4.dp, end = 7.dp, top = 4.dp, bottom = 4.dp),
+    ) {
+        RoundCover(url = coverUrl, size = 20.dp)
+        Spacer(Modifier.size(6.dp))
+        Text(
+            text = songName,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            // 超出胶囊宽度时自动跑马灯滚动，未溢出则静止
+            modifier = Modifier
+                .weight(1f)
+                .basicMarquee(),
+        )
+    }
 }

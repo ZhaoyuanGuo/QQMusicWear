@@ -251,6 +251,8 @@ private fun BigCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            // 圆屏适配：左右收窄，避免直角边角被圆形表盘裁切
+            .padding(horizontal = 18.dp)
             .height(104.dp)
             .clip(shape)
             .background(Brush.verticalGradient(colors))

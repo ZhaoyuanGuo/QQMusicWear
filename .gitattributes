@@ -1,0 +1,3 @@
+# 音乐源脚本是字节级签名校验，行尾必须与签名时一致（LF）
+source/** text eol=lf
+tools/** text eol=lf

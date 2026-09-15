@@ -186,6 +186,18 @@ class PlayerConnection(
         controller?.play()
     }
 
+    /** 从队列移除指定曲目（正在播放的不可移除） */
+    fun removeAt(index: Int) {
+        if (index == controller?.currentMediaItemIndex) return
+        mainExecutor.execute {
+            val c = controller ?: return@execute
+            if (index !in currentQueue.indices) return@execute
+            currentQueue = currentQueue.toMutableList().apply { removeAt(index) }
+            currentUrls = currentUrls.toMutableList().apply { removeAt(index) }
+            c.removeMediaItem(index)
+        }
+    }
+
     /** 一键播放列表：已下载歌曲直接用本地文件（离线可播），其余走网络解析 */
     fun playFromList(songs: List<Song>, mid: String) {
         scope.launch {
@@ -280,7 +292,7 @@ class PlayerConnection(
         val uri = resolved?.url.orEmpty()
         return MediaItem.Builder()
             .setMediaId(mid)
-            .setUri(uri.ifEmpty { "https://isure.stream.qqmusic.qq.com/" })
+            .setUri(uri.ifEmpty { "about:blank" })
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(name)

@@ -54,6 +54,8 @@ object ServiceLocator {
         private set
     lateinit var searchHistory: com.qmusic.wear.data.store.SearchHistoryStore
         private set
+    lateinit var agreementStore: com.qmusic.wear.data.store.AgreementStore
+        private set
 
     private val _credential = MutableStateFlow(Credential.EMPTY)
     val credential: StateFlow<Credential> = _credential.asStateFlow()
@@ -64,14 +66,26 @@ object ServiceLocator {
         credentialStore = CredentialStore(appContext)
         settingsStore = SettingsStore(appContext)
         historyStore = HistoryStore(appContext)
-        api = QMusicApi { _credential.value }
-        repository = MusicRepository(api).apply {
-            uinProvider = { _credential.value.musicid }
+        com.qmusic.wear.data.source.SourceManager.init(appContext, { _credential.value }) { raw ->
+            // 源插件全局事件：凭据过期 → 清除本地凭据并提示重登（仅登录态触发一次）
+            if (raw.contains("CredentialExpired") && _credential.value.isLogged) {
+                onLogout()
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(
+                        appContext,
+                        "登录已过期，请重新登录",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
         }
-        qrLogin = QrLoginManager(api)
+        api = QMusicApi { _credential.value }
+        repository = MusicRepository(api)
+        qrLogin = QrLoginManager()
         player = PlayerConnection(appContext, historyStore)
         downloads = com.qmusic.wear.data.download.DownloadManager(appContext, api.http)
         searchHistory = com.qmusic.wear.data.store.SearchHistoryStore(appContext)
+        agreementStore = com.qmusic.wear.data.store.AgreementStore(appContext)
 
         appScope.launch {
             credentialStore.credentialFlow.collect { cred ->
@@ -146,7 +160,8 @@ class QMusicApp : Application(), SingletonImageLoader.Factory {
 
     /**
      * 全局图片加载器：走 OkHttp 网络引擎（Coil3 默认不含网络支持，必须显式配置），
-     * 为 gtimg 封面 CDN 补 Referer / UA（防盗链），并开启淡入过渡。
+     * 防盗链请求头由音乐源插件 manifest 提供（imageHostSuffix + imageHeaders），
+     * 并开启淡入过渡。
      */
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
@@ -158,10 +173,12 @@ class QMusicApp : Application(), SingletonImageLoader.Factory {
                                 .connectTimeout(10, TimeUnit.SECONDS)
                                 .readTimeout(20, TimeUnit.SECONDS)
                                 .addInterceptor { chain ->
+                                    val rules = com.qmusic.wear.data.source.SourceManager.imageRules
                                     val b = chain.request().newBuilder()
-                                        .header("User-Agent", QMusicApi.WEB_UA)
-                                    if (chain.request().url.host.endsWith("gtimg.cn")) {
-                                        b.header("Referer", "https://y.qq.com/")
+                                    if (rules != null &&
+                                        chain.request().url.host.endsWith(rules.first)
+                                    ) {
+                                        rules.second.forEach { (k, v) -> b.header(k, v) }
                                     }
                                     chain.proceed(b.build())
                                 }

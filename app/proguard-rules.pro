@@ -22,5 +22,10 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
 
+# ---- Rhino JS 引擎（音乐源插件运行时） ----
+-keep class org.mozilla.javascript.** { *; }
+-dontwarn org.mozilla.**
+-keepclassmembers class com.qmusic.wear.data.source.** { *; }
+
 # ---- 排除无用告警 ----
 -dontwarn org.slf4j.**
