@@ -1,0 +1,31 @@
+name: source-contract
+
+# 音乐源脚本推送门禁：签名校验 + 契约测试，防止坏推送/未签名推送到所有用户
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'source/qmusic_source.js'
+      - 'tools/**'
+      - '.github/workflows/source-contract.yml'
+  pull_request:
+    paths:
+      - 'source/qmusic_source.js'
+      - 'tools/**'
+      - '.github/workflows/source-contract.yml'
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify source signature
+        run: node tools/contract-test/verify_sig.js source/qmusic_source.js tools/source-signing/source_signing_public.key
+
+      - name: Run contract test
+        run: node tools/contract-test/run.js source/qmusic_source.js
