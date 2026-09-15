@@ -43,8 +43,9 @@ sealed class SourceState {
  */
 object SourceManager {
 
-    /** 下载入口镜像（指向开源仓库的源脚本，依次尝试） */
+    /** 下载入口镜像（依次尝试；CloudBase 静态托管国内直连，置顶） */
     private val MIRRORS = listOf(
+        "https://suspect-d1g6etar94f6301af-1461800616.tcloudbaseapp.com/qmusic_source.js",
         "https://cdn.jsdelivr.net/gh/ZhaoyuanGuo/QQMusicWear@main/source/qmusic_source.js",
         "https://fastly.jsdelivr.net/gh/ZhaoyuanGuo/QQMusicWear@main/source/qmusic_source.js",
         "https://ghproxy.net/https://raw.githubusercontent.com/ZhaoyuanGuo/QQMusicWear/main/source/qmusic_source.js",
