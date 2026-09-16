@@ -282,8 +282,8 @@ private fun AppRoot() {
         }
         }
 
-        // ---- 实况胶囊：全局悬浮常驻屏幕底部（协议页除外），点击进播放页 ----
-        if (now.song != null) {
+        // ---- 实况胶囊：全局悬浮常驻屏幕底部（协议页/播放页除外），点击进播放页 ----
+        if (now.song != null && screen != Screen.Player) {
             LiveCapsule(
                 coverUrl = now.song?.cover300.orEmpty(),
                 songName = now.song?.name.orEmpty(),
