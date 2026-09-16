@@ -1,4 +1,4 @@
-//qmu-sig:v1:wx9IYqdrn4wuaHa89JRQhqn4dIGFIGJi1whWUWIMlnImtz8j/bWK5ob7k2iHS0hmBipCRpuyrvj5XdgfPOJZAg==
+//qmu-sig:v1:3fWsFPuj2QhO77t66WkjhlztcTjsUP0SMtKQCa70NmgXj3JBIhY858DsZXsLwkhffUuPqkEGmt62XC1Ncc4HDQ==
 /*
  * QQMusicWear 音乐源插件（Web 协议）
  * ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@
  * ---------------------------------------------------------------------------
  */
 
-var SOURCE_VERSION = 4;
+var SOURCE_VERSION = 5;
 
 /** APK 兼容性闸门：宿主 versionCode 低于该值将拒绝加载本源 */
 var MIN_APP_VERSION = 27;
@@ -445,14 +445,22 @@ function parseSingersLoose(root) {
   return out;
 }
 
-/** 歌词字段：base64 解码（解码结果不像 LRC 则原样返回） */
+/** 歌词字段：兼容 {req_1:{data:{lyric}}} / {data:{lyric}} / {lyric}；base64 解码（解码结果不像 LRC 则返回空串走兜底） */
 function extractLyric(resp) {
-  var data = Ob(resp, 'data') || resp;
+  var req1 = Ob(resp, 'req_1');
+  var data = (req1 && (Ob(req1, 'data') || req1)) || Ob(resp, 'data') || resp;
   var raw = S(data, 'lyric');
   if (!raw) return '';
-  var decoded = '';
-  try { decoded = qmu.b64decode(raw); } catch (e) { return raw; }
-  if (decoded.indexOf('[') === 0 || decoded.indexOf('[0') >= 0) return decoded;
+  // 仅当形似 base64 时才解码：宿主 b64decode 对非法输入会抛 Java 异常，
+  // 该异常在部分 Rhino 配置下无法被 JS catch 捕获，会导致整个 handler 失败（表现为「暂无歌词」）。
+  if (/^[A-Za-z0-9+/=\r\n]+$/.test(raw)) {
+    var decoded = '';
+    try { decoded = qmu.b64decode(raw); } catch (e) { decoded = ''; }
+    if (decoded.indexOf('[') === 0 || decoded.indexOf('[0') >= 0) return decoded;
+    // 解码结果不像 LRC（如拿到加密串/乱码）：返回空串让兜底通道接管
+    return '';
+  }
+  // 明文 LRC（经典接口 nobase64=1 通道）直接返回
   return raw;
 }
 
@@ -684,7 +692,9 @@ var handlers = {
     var primary = '';
     try {
       var param = {
-        crypt: 1, lrc_t: 0, qrc: 0, qrc_t: 0, roma: 0, roma_t: 0,
+        // crypt=0：返回 base64 明文歌词（extractLyric 用 b64decode 解开）。
+        // crypt=1 返回加密 hex 串，宿主无私钥会解析失败且非空串会跳过兜底。
+        crypt: 0, lrc_t: 0, qrc: 0, qrc_t: 0, roma: 0, roma_t: 0,
         trans: 0, trans_t: 0, needSingingAnnotations: false, type: 1
       };
       if (args.songId > 0) param.songId = args.songId; else param.songMid = args.mid;

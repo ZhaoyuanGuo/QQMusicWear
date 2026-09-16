@@ -258,7 +258,8 @@ fun SettingsScreen(
                     Spacer(Modifier.size(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            if (ui.sourceUpdateMessage == "") "更新音乐源" else "更新中…",
+                            // null=空闲显示「更新音乐源」；""=更新中/结果提示待消失显示「更新中…」
+                            if (ui.sourceUpdateMessage != null) "更新中…" else "更新音乐源",
                             style = MaterialTheme.typography.labelLarge,
                         )
                         Text(
