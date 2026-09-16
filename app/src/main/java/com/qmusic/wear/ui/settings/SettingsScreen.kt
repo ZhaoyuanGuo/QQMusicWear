@@ -122,7 +122,7 @@ fun SettingsScreen(
                                     .clip(CircleShape)
                                     .border(
                                         width = 1.5.dp,
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
                                         shape = CircleShape,
                                     )
                                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -167,7 +167,7 @@ fun SettingsScreen(
                         Icon(
                             painter = painterResource(R.drawable.ic_user),
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.size(10.dp))
@@ -253,7 +253,7 @@ fun SettingsScreen(
                     Icon(
                         painter = painterResource(R.drawable.ic_refresh),
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(17.dp),
                     )
                     Spacer(Modifier.size(10.dp))
@@ -288,7 +288,7 @@ fun SettingsScreen(
                     Icon(
                         painter = painterResource(R.drawable.ic_download),
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(17.dp),
                     )
                     Spacer(Modifier.size(10.dp))
@@ -311,7 +311,7 @@ fun SettingsScreen(
                     Icon(
                         painter = painterResource(R.drawable.ic_download),
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(17.dp),
                     )
                     Spacer(Modifier.size(10.dp))

@@ -1,10 +1,17 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+    <!-- 用户（线性）：头 + 肩线 -->
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+        android:pathData="M12 4.5A3.5 3.5 0 1 0 12 11.5A3.5 3.5 0 1 0 12 4.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5" />
+    <path
+        android:pathData="M5 20C5 16.4 8.1 14.5 12 14.5C15.9 14.5 19 16.4 19 20"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round" />
 </vector>

@@ -52,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
@@ -88,6 +89,7 @@ import com.qmusic.wear.ui.components.rememberHaptics
 import com.qmusic.wear.ui.components.rotaryGeneric
 import com.qmusic.wear.ui.theme.LocalIsAmbient
 import kotlin.math.abs
+import androidx.compose.foundation.layout.fillMaxHeight
 
 /**
  * 播放页（参考磁音手表版圆盘布局，480×480 圆屏）：
@@ -310,8 +312,8 @@ private fun PlayerContent(
 ) {
     val isAmbient = LocalIsAmbient.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        // ---- 中央大圆盘（磁音同款）：封面填充，占短边 76%，圆心略上移给底部控件留位 ----
-        val disc = minOf(maxWidth, maxHeight) * 0.76f
+        // ---- 中央大圆盘（磁音同款）：封面填充，占短边 86%，与屏幕/进度环同心（不超环） ----
+        val disc = minOf(maxWidth, maxHeight) * 0.86f
         val coverTint = rememberCoverColor(now.song?.cover500.orEmpty())
 
         // 播放时封面缓慢旋转（约30秒/圈），暂停即停并轻微变暗；AOD 下静止
@@ -337,7 +339,6 @@ private fun PlayerContent(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .align(Alignment.Center)
-                .offset(y = (-10).dp)
                 .size(disc)
                 .clip(CircleShape)
                 .background(coverTint ?: MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -353,11 +354,26 @@ private fun PlayerContent(
                         alpha = coverAlpha
                     },
             )
-            // 压暗保证盘内文字可读（AOD 下再压暗一档降亮度）
+            // 整体只轻微压暗（AOD 下再压暗一档降亮度），让封面更透亮
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = if (isAmbient) 0.50f else 0.30f)),
+                    .background(Color.Black.copy(alpha = if (isAmbient) 0.50f else 0.10f)),
+            )
+            // 顶部局部渐变 scrim：只压暗歌名区域，保证可读性的同时不糊住整个封面
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.42f)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Black.copy(alpha = if (isAmbient) 0.55f else 0.45f),
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
             )
 
             // 控制键组：精确位于盘心——圆心处横向弦最宽，小圆屏也不会裁掉两侧切歌键
@@ -402,7 +418,7 @@ private fun PlayerContent(
                 Text(
                     text = now.song?.singers.orEmpty(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.72f),
+                    color = Color.White.copy(alpha = 0.60f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 14.dp),
@@ -719,7 +735,7 @@ private fun VolumeSection(ui: PlayerUiState, vm: PlayerViewModel) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
             .padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.86f))
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
@@ -756,7 +772,7 @@ private fun QualityPicker(
             .fillMaxWidth()
             .padding(horizontal = 22.dp)
             .verticalScroll(rememberScrollState())
-            .clip(RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.86f))
             .padding(horizontal = 14.dp, vertical = 10.dp),
     ) {

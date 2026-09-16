@@ -249,14 +249,14 @@ private fun QueueRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(20.dp))
             .combinedClickable(onClick = onClick, onLongClick = onRemove)
             .padding(horizontal = 16.dp, vertical = 7.dp),
     ) {
         Box(
             Modifier
                 .size(42.dp)
-                .clip(RoundedCornerShape(11.dp))
+                .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         ) {
             AsyncImage(

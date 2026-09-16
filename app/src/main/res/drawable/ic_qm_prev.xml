@@ -4,11 +4,17 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- QQ音乐手机版上一首：双左三角 -->
+    <!-- 上一首（线性）：双左箭头 -->
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M12,6.8 L5,12 L12,17.2 Z" />
+        android:pathData="M12.5 6.5L7 12L12.5 17.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M19,6.8 L12,12 L19,17.2 Z" />
+        android:pathData="M18 6.5L12.5 12L18 17.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
 </vector>

@@ -69,7 +69,7 @@ import com.qmusic.wear.ui.components.SquareCover
 /**
  * 「我的」页（每日推荐页右滑出现）：
  * 顶部搜索栏（歌曲/歌手/歌单） + 我的喜欢 / 最近播放 / 我的歌单 / 下载管理 / 设置。
- * 输入即搜索；左滑/右滑或点击「返回推荐」关闭（左滑=返回上一级）。
+ * 输入即搜索；左滑/右滑关闭（左滑=返回上一级）。
  */
 @Composable
 fun MineOverlay(
@@ -156,16 +156,16 @@ fun MineOverlay(
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.62f))
-                    .border(0.5.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f))
+                    .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(50))
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 decorationBox = { inner ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             painter = painterResource(R.drawable.ic_search),
                             contentDescription = "搜索",
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(14.dp),
                         )
                         Spacer(Modifier.size(8.dp))
@@ -203,7 +203,7 @@ fun MineOverlay(
                             Icon(
                                 painter = painterResource(R.drawable.ic_mic),
                                 contentDescription = "语音搜索",
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(16.dp),
                             )
                         }
@@ -264,15 +264,6 @@ fun MineOverlay(
                     },
                 )
             }
-
-            Spacer(Modifier.height(6.dp))
-            Button(
-                onClick = onDismiss,
-                modifier = Modifier.padding(horizontal = 30.dp),
-            ) {
-                Text("返回推荐", style = MaterialTheme.typography.labelMedium)
-            }
-            Spacer(Modifier.height(14.dp))
         }
     }
 }
@@ -352,13 +343,12 @@ private fun MineTabs(
         ui.likedPlaylist?.let { liked ->
             item {
                 GlassRow(onClick = { onOpenLiked(liked) }) {
-                    SquareCover(url = liked.picUrl, size = 42.dp, corner = 10.dp)
+                    SquareCover(url = liked.picUrl, size = 42.dp, corner = 12.dp)
                     Spacer(Modifier.size(9.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
                             "我的喜欢",
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
                         )
                         Text(
                             text = "${liked.songCount}首",
@@ -392,7 +382,7 @@ private fun MineTabs(
                             Icon(
                                 painter = painterResource(R.drawable.ic_history),
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(17.dp),
                             )
                             Spacer(Modifier.size(10.dp))
@@ -579,7 +569,7 @@ private fun SearchResults(
                         Icon(
                             painter = painterResource(R.drawable.ic_user),
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.size(8.dp))
@@ -640,7 +630,7 @@ private fun ResultTab(
             ButtonDefaults.buttonColors()
         } else {
             ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f),
                 contentColor = MaterialTheme.colorScheme.onSurface,
             )
         },
@@ -716,7 +706,7 @@ private fun SearchHistoryRow(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.62f))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f))
                         .clickable { onPick(h) }
                         .padding(horizontal = 10.dp, vertical = 5.dp),
                 ) {

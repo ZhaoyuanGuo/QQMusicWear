@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -135,7 +136,7 @@ fun HomeScreen(
                             singers = rep?.singers.orEmpty(),
                             playingThis = now.isPlaying && rep != null && now.song?.mid == rep.mid,
                             loading = ui.loading && ui.songs.isEmpty(),
-                            colors = listOf(Color(0xFF31C27C), Color(0xFF1E9E63)),
+                            colors = listOf(Color(0xFF1C2B22), Color(0xFF121813)),
                             onToggle = {
                                 if (rep != null) {
                                     if (now.song?.mid == rep.mid) {
@@ -162,7 +163,7 @@ fun HomeScreen(
                                 singers = lucky?.singers.orEmpty(),
                                 playingThis = false,
                                 loading = false,
-                                colors = listOf(Color(0xFF7C6CF0), Color(0xFF5B4BD6)),
+                                colors = listOf(Color(0xFF232033), Color(0xFF15131D)),
                                 onToggle = {
                                     lucky?.let {
                                         vm.playFrom(ui.songs, it.mid)
@@ -184,7 +185,7 @@ fun HomeScreen(
                             singers = "",
                             playingThis = false,
                             loading = false,
-                            colors = listOf(Color(0xFFF5924E), Color(0xFFE0762E)),
+                            colors = listOf(Color(0xFF2E2318), Color(0xFF1B1510)),
                             onToggle = onOpenRank,
                             onOpen = onOpenRank,
                         )
@@ -200,7 +201,7 @@ fun HomeScreen(
                             singers = "",
                             playingThis = false,
                             loading = false,
-                            colors = listOf(Color(0xFF4EA8F0), Color(0xFF2E86D6)),
+                            colors = listOf(Color(0xFF1B2836), Color(0xFF111821)),
                             onToggle = onOpenSquare,
                             onOpen = onOpenSquare,
                         )
@@ -235,10 +236,10 @@ fun HomeScreen(
 
 /** 官方风格卡片配色轮换（紫/橙/蓝/青，备用） */
 private val cardColors = listOf(
-    listOf(Color(0xFF7C6CF0), Color(0xFF5B4BD6)),
-    listOf(Color(0xFFF5924E), Color(0xFFE0762E)),
-    listOf(Color(0xFF4EA8F0), Color(0xFF2E86D6)),
-    listOf(Color(0xFF35C3B2), Color(0xFF1FA394)),
+    listOf(Color(0xFF232033), Color(0xFF15131D)),
+    listOf(Color(0xFF2E2318), Color(0xFF1B1510)),
+    listOf(Color(0xFF1B2836), Color(0xFF111821)),
+    listOf(Color(0xFF1C2F2B), Color(0xFF101917)),
 )
 
 /**
@@ -258,7 +259,7 @@ private fun BigCard(
     onToggle: () -> Unit,
     onOpen: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(20.dp)
     // 按压弹性反馈：按下缩至0.97，松开回弹
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -292,7 +293,7 @@ private fun BigCard(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .size(56.dp)
-                    .clip(RoundedCornerShape(10.dp)),
+                    .clip(RoundedCornerShape(12.dp)),
             )
         } else {
             Box(
@@ -300,7 +301,7 @@ private fun BigCard(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .size(56.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(Color.White.copy(alpha = 0.18f)),
             ) {
                 Icon(
@@ -322,6 +323,7 @@ private fun BigCard(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
                 color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -329,7 +331,7 @@ private fun BigCard(
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.78f),
+                color = Color.White.copy(alpha = 0.66f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -376,7 +378,7 @@ private fun BigCard(
                 Text(
                     text = singers,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.72f),
+                    color = Color.White.copy(alpha = 0.62f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

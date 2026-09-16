@@ -1,10 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- 下载：向下箭头 + 底部托盘 -->
+    <!-- 下载（线性）：向下箭头 + 托盘 -->
     <path
-        android:fillColor="@android:color/white"
-        android:pathData="M12,3 C12.5523,3 13,3.4477 13,4 L13,13.5858 L15.2929,11.2929 C15.6834,10.9024 16.3166,10.9024 16.7071,11.2929 C17.0976,11.6834 17.0976,12.3166 16.7071,12.7071 L12.7071,16.7071 C12.5196,16.8946 12.2652,17 12,17 C11.7348,17 11.4804,16.8946 11.2929,16.7071 L7.2929,12.7071 C6.9024,12.3166 6.9024,11.6834 7.2929,11.2929 C7.6834,10.9024 8.3166,10.9024 8.7071,11.2929 L11,13.5858 L11,4 C11,3.4477 11.4477,3 12,3 Z M5,19 C4.4477,19 4,19.4477 4,20 C4,20.5523 4.4477,21 5,21 L19,21 C19.5523,21 20,20.5523 20,20 C20,19.4477 19.5523,19 19,19 L5,19 Z" />
+        android:pathData="M12 4V15.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M7.5 11L12 15.5L16.5 11"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M4.5 19.5H19.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round" />
 </vector>

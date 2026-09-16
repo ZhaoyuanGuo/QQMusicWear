@@ -24,7 +24,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -139,13 +143,12 @@ fun LyricsScreen(
                                 // 当前行颜色/字号平滑过渡（替代原来的硬切换）
                                 val lineColor by animateColorAsState(
                                     targetValue = if (active) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.80f),
                                     animationSpec = tween(220),
                                     label = "lyric_color",
                                 )
                                 val lineSize by animateFloatAsState(
-                                    targetValue = if (active) MaterialTheme.typography.titleMedium.fontSize.value
-                                    else MaterialTheme.typography.bodyMedium.fontSize.value,
+                                    targetValue = if (active) 18f else 13f,
                                     animationSpec = tween(220),
                                     label = "lyric_size",
                                 )
@@ -158,9 +161,17 @@ fun LyricsScreen(
                                     Text(
                                         text = line.text,
                                         fontSize = lineSize.sp,
-                                        fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
+                                        fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
                                         color = lineColor,
                                         textAlign = TextAlign.Center,
+                                        // 当前行加品牌色微光晕，从灰底中"浮"出来
+                                        style = TextStyle(
+                                            shadow = if (active) Shadow(
+                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                                                blurRadius = 12f,
+                                                offset = Offset.Zero,
+                                            ) else null,
+                                        ),
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(horizontal = 28.dp, vertical = 6.dp),
@@ -185,6 +196,22 @@ fun LyricsScreen(
                             item { Box(Modifier.height(140.dp)) }
                         }
                     }
+
+                    // 顶部/底部黑色渐隐边缘：歌词滚入滚出时柔和消失（背景本身为深色 scrim，黑渐变协调）
+                    Box(
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .background(Brush.verticalGradient(listOf(Color.Black, Color.Transparent))),
+                    )
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black))),
+                    )
                 }
             }
         }

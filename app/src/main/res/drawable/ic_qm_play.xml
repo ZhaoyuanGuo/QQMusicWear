@@ -4,8 +4,11 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- QQ音乐手机版播放键：实心三角（略圆润比例） -->
+    <!-- 播放（线性）：三角 -->
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M7.8,5.1 L18.6,11.2 L18.6,12.8 L7.8,18.9 Z" />
+        android:pathData="M8.7 5.9L17.8 12L8.7 18.1Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
 </vector>

@@ -25,14 +25,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
-import com.qmusic.wear.R
 import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.ui.components.PlaylistHeader
 import com.qmusic.wear.ui.components.SongRow
@@ -77,46 +75,9 @@ fun SongListScreen(
                     onPlayAll = if (ui.songs.isEmpty()) null else {
                         { vm.playFrom(ui.songs.first().mid); onOpenPlayer() }
                     },
+                    onDownloadAll = if (ui.songs.isEmpty()) null else { { vm.downloadAll() } },
+                    downloadPending = batch.running && batch.total > 0,
                 )
-            }
-
-            // ---- 下载全部（串行队列，已下载自动跳过） ----
-            if (ui.songs.isNotEmpty()) {
-                item {
-                    val pending = batch.running && batch.total > 0
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.padding(horizontal = 30.dp),
-                    ) {
-                        Button(
-                            onClick = { vm.downloadAll() },
-                            enabled = !pending,
-                        ) {
-                            if (pending) {
-                                CircularProgressIndicator(
-                                    progress = { batch.done.toFloat() / batch.total },
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                )
-                                Spacer(Modifier.size(8.dp))
-                                Text(
-                                    "下载中 ${batch.done}/${batch.total}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            } else {
-                                Icon(
-                                    painter = androidx.compose.ui.res.painterResource(R.drawable.ic_download),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(15.dp),
-                                )
-                                Spacer(Modifier.size(8.dp))
-                                Text("下载全部", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                    }
-                }
             }
 
             if (ui.loading && ui.songs.isEmpty()) {

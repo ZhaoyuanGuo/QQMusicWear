@@ -84,7 +84,7 @@ fun LoginScreen(
                                 contentDescription = "QQ 登录二维码",
                                 modifier = Modifier
                                     .size(104.dp)
-                                    .clip(RoundedCornerShape(10.dp))
+                                    .clip(RoundedCornerShape(12.dp))
                                     .background(Color.White)
                                     .padding(4.dp),
                             )

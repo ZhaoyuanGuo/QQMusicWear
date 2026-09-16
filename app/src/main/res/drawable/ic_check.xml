@@ -1,10 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- 对勾 -->
+    <!-- 对勾（线性） -->
     <path
-        android:fillColor="@android:color/white"
-        android:pathData="M9.5,16.2 L5.8,12.5 C5.41,12.11 4.78,12.11 4.39,12.5 C4,12.89 4,13.52 4.39,13.91 L8.79,18.31 C9.18,18.7 9.81,18.7 10.2,18.31 L19.61,8.91 C20,8.52 20,7.89 19.61,7.5 C19.22,7.11 18.59,7.11 18.2,7.5 L9.5,16.2 Z" />
+        android:pathData="M4.5 12.5L9.5 17.5L19.5 6.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
 </vector>

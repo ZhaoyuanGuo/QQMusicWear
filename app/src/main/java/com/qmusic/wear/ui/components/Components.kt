@@ -47,6 +47,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -54,6 +55,7 @@ import coil3.compose.AsyncImage
 import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
 import androidx.wear.compose.foundation.rotary.rotaryScrollable
+import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
@@ -295,7 +297,6 @@ fun SongRow(
                     style = MaterialTheme.typography.labelLarge,
                     color = when {
                         playing -> MaterialTheme.colorScheme.primary
-                        song.vip -> Color(0xFF31C27C)
                         else -> MaterialTheme.colorScheme.onSurface
                     },
                     maxLines = 1,
@@ -307,9 +308,9 @@ fun SongRow(
                     Text(
                         "VIP",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF31C27C),
+                        color = Color.White.copy(alpha = 0.62f),
                         modifier = Modifier
-                            .background(Color(0xFF31C27C).copy(alpha = 0.16f), RoundedCornerShape(4.dp))
+                            .background(Color.White.copy(alpha = 0.10f), RoundedCornerShape(4.dp))
                             .padding(horizontal = 4.dp, vertical = 1.dp),
                     )
                 }
@@ -354,7 +355,7 @@ fun SongRow(
 fun GlassRow(
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
-    corner: Dp = 18.dp,
+    corner: Dp = 20.dp,
     playing: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     content: @Composable RowScope.() -> Unit,
@@ -363,10 +364,10 @@ fun GlassRow(
     val base = modifier
         .fillMaxWidth()
         .clip(shape)
-        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.62f))
+        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f))
         .border(
             0.5.dp,
-            if (playing) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.08f),
+            if (playing) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.14f),
             shape,
         )
     val interactive = when {
@@ -394,8 +395,8 @@ fun GlassPanel(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(corner))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.62f))
-            .border(0.5.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(corner))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f))
+            .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(corner))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         content = content,
     )
@@ -412,7 +413,8 @@ fun PageTitle(
         Text(
             title,
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         if (subtitle != null && subtitle.isNotEmpty()) {
             Spacer(Modifier.height(2.dp))
@@ -431,10 +433,10 @@ fun CountChip(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.primary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier
             .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
+            .background(Color.White.copy(alpha = 0.08f))
             .padding(horizontal = 7.dp, vertical = 2.dp),
     )
 }
@@ -447,6 +449,8 @@ fun PlaylistHeader(
     songCount: Int,
     onPlayAll: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onDownloadAll: (() -> Unit)? = null,
+    downloadPending: Boolean = false,
 ) {
     GlassPanel(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -456,11 +460,44 @@ fun PlaylistHeader(
                 Text(
                     title,
                     style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(3.dp))
                 CountChip("${songCount}首")
+            }
+        }
+        // 下载全部：小圆钮（卡片内右对齐，播放全部上方）；下载中圆钮内显示进度环
+        if (onDownloadAll != null && songCount > 0) {
+            Spacer(Modifier.height(6.dp))
+            Box(
+                contentAlignment = Alignment.CenterEnd,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.14f), CircleShape)
+                        .clickable(enabled = !downloadPending, onClick = onDownloadAll),
+                ) {
+                    if (downloadPending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 1.5.dp,
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_download),
+                            contentDescription = "下载全部",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                }
             }
         }
         if (onPlayAll != null && songCount > 0) {
@@ -504,7 +541,7 @@ fun PlaylistRow(
     badge: (@Composable () -> Unit)? = null,
 ) {
     GlassRow(onClick = onClick, modifier = modifier) {
-        SquareCover(url = coverUrl, size = 42.dp, corner = 10.dp)
+        SquareCover(url = coverUrl, size = 42.dp, corner = 12.dp)
         Spacer(Modifier.size(9.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -525,13 +562,13 @@ fun PlaylistRow(
     }
 }
 
-/** 小节标题（左对齐品牌色小字，替代默认 ListHeader） */
+/** 小节标题（左对齐灰色小字，替代默认 ListHeader） */
 @Composable
 fun SectionHeader(title: String, modifier: Modifier = Modifier) {
     Text(
         title,
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.primary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 10.dp, top = 3.dp, bottom = 1.dp),
@@ -597,7 +634,7 @@ fun LiveCapsule(
             .width(108.dp)
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f))
-            .border(0.5.dp, Color.White.copy(alpha = 0.14f), shape)
+            .border(0.5.dp, Color.White.copy(alpha = 0.16f), shape)
             .clickable(onClick = onClick)
             .padding(start = 4.dp, end = 7.dp, top = 4.dp, bottom = 4.dp),
     ) {
