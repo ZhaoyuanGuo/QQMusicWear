@@ -49,6 +49,16 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- 「正在播放」磁贴 -->
+        <service
+            android:name=".data.tile.PlayingTileService"
+            android:exported="true"
+            android:label="@string/tile_playing">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_SERVICE" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

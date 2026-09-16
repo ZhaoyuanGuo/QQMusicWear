@@ -7,6 +7,7 @@ import com.qmusic.wear.data.api.ToplistItem
 import com.qmusic.wear.data.api.favPlaylists
 import com.qmusic.wear.data.api.guessRecommend
 import com.qmusic.wear.data.api.lyric
+import com.qmusic.wear.data.api.lyricTrans
 import com.qmusic.wear.data.api.musicHallShelves
 import com.qmusic.wear.data.api.myPlaylists
 import com.qmusic.wear.data.api.playlistDetail
@@ -103,6 +104,10 @@ class MusicRepository(
 
     suspend fun lyricOf(song: Song): String =
         runCatching { api.lyric(song.mid, song.songId) }.getOrDefault("")
+
+    /** 歌词翻译（无译文或源脚本未提供该能力时返回空串） */
+    suspend fun lyricTransOf(song: Song): String =
+        runCatching { api.lyricTrans(song.mid, song.songId) }.getOrDefault("")
 
     suspend fun searchSongs(query: String): List<Song> =
         searchAll(query).songs

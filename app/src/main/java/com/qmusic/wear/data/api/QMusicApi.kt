@@ -154,6 +154,13 @@ suspend fun QMusicApi.lyric(songMid: String, songId: Long): String =
         call("lyric", args("mid" to songMid, "songId" to songId)),
     )
 
+/** 歌词翻译（译文 LRC；无译文或源版本过旧时返回空串） */
+suspend fun QMusicApi.lyricTrans(songMid: String, songId: Long): String =
+    SourceDtos.json.decodeFromString(
+        String.serializer(),
+        call("lyricTrans", args("mid" to songMid, "songId" to songId)),
+    )
+
 /** 加入/移出「我喜欢」 */
 suspend fun QMusicApi.setLike(songId: Long, like: Boolean): Boolean =
     SourceDtos.json.decodeFromString(

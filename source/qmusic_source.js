@@ -1,4 +1,4 @@
-//qmu-sig:v1:3fWsFPuj2QhO77t66WkjhlztcTjsUP0SMtKQCa70NmgXj3JBIhY858DsZXsLwkhffUuPqkEGmt62XC1Ncc4HDQ==
+//qmu-sig:v1:Nr7u5WBjV8/0lPWGUxtocmmrjvKfjSuqRDpQWplWwXEKbvM59MKQADibO4zdDyETwqAAvg8GF35indDUiO/bAw==
 /*
  * QQMusicWear 音乐源插件（Web 协议）
  * ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@
  * ---------------------------------------------------------------------------
  */
 
-var SOURCE_VERSION = 5;
+var SOURCE_VERSION = 6;
 
 /** APK 兼容性闸门：宿主 versionCode 低于该值将拒绝加载本源 */
 var MIN_APP_VERSION = 27;
@@ -447,9 +447,14 @@ function parseSingersLoose(root) {
 
 /** 歌词字段：兼容 {req_1:{data:{lyric}}} / {data:{lyric}} / {lyric}；base64 解码（解码结果不像 LRC 则返回空串走兜底） */
 function extractLyric(resp) {
+  return extractLrcField(resp, 'lyric');
+}
+
+/** 通用 LRC 字段提取：key 可为 lyric（原文）/ trans（翻译） */
+function extractLrcField(resp, key) {
   var req1 = Ob(resp, 'req_1');
   var data = (req1 && (Ob(req1, 'data') || req1)) || Ob(resp, 'data') || resp;
-  var raw = S(data, 'lyric');
+  var raw = S(data, key);
   if (!raw) return '';
   // 仅当形似 base64 时才解码：宿主 b64decode 对非法输入会抛 Java 异常，
   // 该异常在部分 Rhino 配置下无法被 JS catch 捕获，会导致整个 handler 失败（表现为「暂无歌词」）。
@@ -711,6 +716,19 @@ var handlers = {
       if (!text) return '';
       return extractLyric(JSON.parse(text));
     } catch (e2) { return ''; }
+  },
+
+  /** 歌词翻译（trans=1 请求译文 LRC；无译文返回空串。老版本 APK 不会调用此 handler，向后兼容） */
+  lyricTrans: function (args) {
+    try {
+      var param = {
+        crypt: 0, lrc_t: 0, qrc: 0, qrc_t: 0, roma: 0, roma_t: 0,
+        trans: 1, trans_t: 1, needSingingAnnotations: false, type: 1
+      };
+      if (args.songId > 0) param.songId = args.songId; else param.songMid = args.mid;
+      var resp = musicuCall('music.musichallSong.PlayLyricInfo', 'GetPlayLyricInfo', param);
+      return extractLrcField(resp, 'trans');
+    } catch (e) { return ''; }
   },
 
   /** 聚合搜索：歌曲 / 歌手 / 歌单（musicu Desktop 主通道 + client_search_cp 兜底） */

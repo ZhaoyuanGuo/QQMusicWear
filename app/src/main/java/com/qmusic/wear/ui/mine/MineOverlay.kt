@@ -1,5 +1,10 @@
 package com.qmusic.wear.ui.mine
 
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -89,6 +94,18 @@ fun MineOverlay(
 
     LaunchedEffect(Unit) { vm.load() }
 
+    // 语音搜索：系统语音识别 → 识别结果填入搜索框自动触发搜索
+    val voiceLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val text = result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+        if (result.resultCode == Activity.RESULT_OK && !text.isNullOrBlank()) {
+            vm.onQueryChange(text)
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -152,7 +169,30 @@ fun MineOverlay(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        inner()
+                        // 文本编辑区占剩余宽度，麦克风固定在右侧
+                        Box(Modifier.weight(1f)) { inner() }
+                        Icon(
+                            painter = painterResource(R.drawable.ic_mic),
+                            contentDescription = "语音搜索",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clickable {
+                                    val intent =
+                                        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                            putExtra(
+                                                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                                            )
+                                            putExtra(
+                                                RecognizerIntent.EXTRA_PROMPT,
+                                                "说出要搜索的歌曲、歌手或歌单",
+                                            )
+                                        }
+                                    // 设备无语音识别组件时静默忽略
+                                    runCatching { voiceLauncher.launch(intent) }
+                                },
+                        )
                     }
                 },
             )

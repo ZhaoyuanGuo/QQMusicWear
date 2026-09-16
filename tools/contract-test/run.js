@@ -25,7 +25,7 @@ const genericBody = JSON.stringify({ code: 0, req_1: { code: 0, data: {} } });
 const REQUIRED_HANDLERS = [
   'ping', 'recommendSongs', 'recommendNewSongs', 'playlistDetail',
   'toplists', 'toplistSongs', 'musicHallShelves', 'myPlaylists',
-  'favPlaylists', 'userProfile', 'lyric', 'searchAll', 'resolveUrls',
+  'favPlaylists', 'userProfile', 'lyric', 'lyricTrans', 'searchAll', 'resolveUrls',
   'setLike', 'qrLogin',
 ];
 

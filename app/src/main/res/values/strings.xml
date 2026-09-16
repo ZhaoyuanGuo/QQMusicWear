@@ -18,6 +18,9 @@
     <string name="home_daily">每日推荐</string>
     <string name="home_load_failed">加载失败，请重试</string>
 
+    <!-- 磁贴 -->
+    <string name="tile_playing">正在播放</string>
+
     <!-- 登录页 -->
     <string name="login_title">扫码登录</string>
     <string name="login_wait_scan">请用手机 QQ 音乐扫码</string>

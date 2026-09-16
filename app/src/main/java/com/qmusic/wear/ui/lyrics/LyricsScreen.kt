@@ -107,18 +107,39 @@ fun LyricsScreen(
                     }
                     itemsIndexed(ui.lines) { index, line ->
                         val active = index == ui.activeIndex
-                        Text(
-                            text = line.text,
-                            style = if (active) MaterialTheme.typography.titleMedium
-                            else MaterialTheme.typography.bodyMedium,
-                            color = if (active) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 28.dp, vertical = 6.dp)
                                 .clickable { ServiceLocator.player.seekTo(line.timeMs) },
-                        )
+                        ) {
+                            Text(
+                                text = line.text,
+                                style = if (active) MaterialTheme.typography.titleMedium
+                                else MaterialTheme.typography.bodyMedium,
+                                color = if (active) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 28.dp, vertical = 6.dp),
+                            )
+                            // 译文：原文行下方灰色小字（无翻译的行不占位）
+                            ui.trans[index]?.let { t ->
+                                Text(
+                                    text = t,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 28.dp)
+                                        .padding(bottom = 6.dp),
+                                )
+                            }
+                        }
                     }
                     item { Box(Modifier.height(140.dp)) }
                 }
