@@ -23,10 +23,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -210,16 +208,19 @@ fun MineOverlay(
             }
 
             when {
-                search.query.isBlank() -> MineTabs(
-                    ui = ui,
-                    recentCount = recent.size,
-                    sessionBad = sessionBad,
-                    onOpenLiked = { liked -> onOpenPlaylist(liked.disstid, liked.name) },
-                    onOpenRecent = onOpenRecent,
-                    onOpenPlaylist = onOpenPlaylist,
-                    onOpenDownloads = onOpenDownloads,
-                    onOpenSettings = onOpenSettings,
-                )
+                // weight(1f) 给 MineTabs 列表有界高度（LazyColumn 需受限约束），并为底部按钮留出空间
+                search.query.isBlank() -> Box(Modifier.weight(1f)) {
+                    MineTabs(
+                        ui = ui,
+                        recentCount = recent.size,
+                        sessionBad = sessionBad,
+                        onOpenLiked = { liked -> onOpenPlaylist(liked.disstid, liked.name) },
+                        onOpenRecent = onOpenRecent,
+                        onOpenPlaylist = onOpenPlaylist,
+                        onOpenDownloads = onOpenDownloads,
+                        onOpenSettings = onOpenSettings,
+                    )
+                }
 
                 search.searching -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -272,149 +273,162 @@ private fun MineTabs(
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    val scrollState = rememberScrollState()
-    Column(
+    // 听歌统计（本地数据）
+    val stats = ServiceLocator.playStats.weekStats.collectAsStateWithLifecycle().value
+    // 用 LazyColumn 承载列表（与搜索结果列表同款模式）：verticalScroll 与 rotaryScrollable
+    // 同节点叠加时，verticalScroll 会向内层传无限高度约束导致测量崩溃
+    val listState = rememberLazyListState()
+    LazyColumn(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(scrollState)
-            .rotaryGeneric(scrollState),
+            .rotaryGeneric(listState),
+        state = listState,
         verticalArrangement = Arrangement.spacedBy(6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // 登录状态异常：凭据过期或接口全部拉取失败
         if (sessionBad) {
-            GlassRow(onClick = onOpenSettings) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_user),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(17.dp),
-                )
-                Spacer(Modifier.size(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "登录可能已过期",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.error,
+            item {
+                GlassRow(onClick = onOpenSettings) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_user),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(17.dp),
                     )
-                    Text(
-                        "点击去设置重新扫码登录",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Spacer(Modifier.size(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "登录可能已过期",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Text(
+                            "点击去设置重新扫码登录",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
 
         // 未登录提示：登录入口在设置里
         if (ui.profile == null && !sessionBad) {
-            GlassRow(onClick = onOpenSettings) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_user),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(17.dp),
-                )
-                Spacer(Modifier.size(10.dp))
-                Text(
-                    "未登录 · 去设置登录",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            item {
+                GlassRow(onClick = onOpenSettings) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_user),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(17.dp),
+                    )
+                    Spacer(Modifier.size(10.dp))
+                    Text(
+                        "未登录 · 去设置登录",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
         // ---- 我的喜欢 ----
         ui.likedPlaylist?.let { liked ->
-            GlassRow(onClick = { onOpenLiked(liked) }) {
-                SquareCover(url = liked.picUrl, size = 42.dp, corner = 10.dp)
-                Spacer(Modifier.size(9.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "我的喜欢",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = "${liked.songCount}首",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            item {
+                GlassRow(onClick = { onOpenLiked(liked) }) {
+                    SquareCover(url = liked.picUrl, size = 42.dp, corner = 10.dp)
+                    Spacer(Modifier.size(9.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "我的喜欢",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "${liked.songCount}首",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        painter = painterResource(R.drawable.ic_heart),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(15.dp),
                     )
                 }
-                Icon(
-                    painter = painterResource(R.drawable.ic_heart),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(15.dp),
-                )
             }
         }
 
         // ---- 听歌统计（本地数据） ----
-        val stats = ServiceLocator.playStats.weekStats.collectAsStateWithLifecycle().value
         if (stats.playCount > 0) {
-            val hours = stats.totalSec / 3600
-            val mins = (stats.totalSec % 3600) / 60
-            val durText = when {
-                hours > 0 -> "${hours}小时${mins}分钟"
-                mins > 0 -> "${mins}分钟"
-                else -> "刚刚开始"
-            }
-            GlassPanel {
-                Column(Modifier.fillMaxWidth()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_history),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(17.dp),
-                        )
-                        Spacer(Modifier.size(10.dp))
-                        Text(
-                            "本周已听 $durText · ${stats.playCount}次",
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
-                    if (stats.topName.isNotEmpty()) {
-                        Spacer(Modifier.size(4.dp))
-                        Text(
-                            "最常听：${stats.topName} · ${stats.topSingers}（${stats.topCount}次）",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+            item {
+                val hours = stats.totalSec / 3600
+                val mins = (stats.totalSec % 3600) / 60
+                val durText = when {
+                    hours > 0 -> "${hours}小时${mins}分钟"
+                    mins > 0 -> "${mins}分钟"
+                    else -> "刚刚开始"
+                }
+                GlassPanel {
+                    Column(Modifier.fillMaxWidth()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_history),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(17.dp),
+                            )
+                            Spacer(Modifier.size(10.dp))
+                            Text(
+                                "本周已听 $durText · ${stats.playCount}次",
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                        if (stats.topName.isNotEmpty()) {
+                            Spacer(Modifier.size(4.dp))
+                            Text(
+                                "最常听：${stats.topName} · ${stats.topSingers}（${stats.topCount}次）",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
         }
 
         // ---- 最近播放 ----
-        GlassRow(onClick = onOpenRecent) {
-            Icon(
-                painter = painterResource(R.drawable.ic_history),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(17.dp),
-            )
-            Spacer(Modifier.size(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "最近播放",
-                    style = MaterialTheme.typography.labelLarge,
+        item {
+            GlassRow(onClick = onOpenRecent) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_history),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(17.dp),
                 )
-                Text(
-                    text = if (recentCount == 0) "本地播放记录" else "最近播放 ${recentCount}首",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Spacer(Modifier.size(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "最近播放",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(
+                        text = if (recentCount == 0) "本地播放记录" else "最近播放 ${recentCount}首",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
         // ---- 我的歌单 ----
         if (ui.favPlaylists.isNotEmpty()) {
-            SectionHeader("我的歌单")
-            ui.favPlaylists.forEach { pl ->
+            item { SectionHeader("我的歌单") }
+            items(ui.favPlaylists) { pl ->
                 PlaylistRow(
                     name = pl.name,
                     coverUrl = pl.picUrl,
@@ -426,50 +440,54 @@ private fun MineTabs(
         }
 
         // ---- 下载管理 ----
-        GlassRow(onClick = onOpenDownloads) {
-            Icon(
-                painter = painterResource(R.drawable.ic_download),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(17.dp),
-            )
-            Spacer(Modifier.size(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "下载管理",
-                    style = MaterialTheme.typography.labelLarge,
+        item {
+            GlassRow(onClick = onOpenDownloads) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_download),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(17.dp),
                 )
-                Text(
-                    "已下载歌曲 · 长按删除",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Spacer(Modifier.size(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "下载管理",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(
+                        "已下载歌曲 · 长按删除",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
         // ---- 设置 ----
-        GlassRow(onClick = onOpenSettings) {
-            Icon(
-                painter = painterResource(R.drawable.ic_settings),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(17.dp),
-            )
-            Spacer(Modifier.size(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "设置",
-                    style = MaterialTheme.typography.labelLarge,
+        item {
+            GlassRow(onClick = onOpenSettings) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_settings),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(17.dp),
                 )
-                Text(
-                    "默认音质 · 账号与登录",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Spacer(Modifier.size(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "设置",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(
+                        "默认音质 · 账号与登录",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
-        Spacer(Modifier.height(4.dp))
+        item { Spacer(Modifier.height(4.dp)) }
     }
 }
 
