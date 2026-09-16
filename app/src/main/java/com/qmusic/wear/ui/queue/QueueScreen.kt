@@ -50,6 +50,7 @@ import com.qmusic.wear.data.model.PlayMode
 import com.qmusic.wear.data.model.Song
 import com.qmusic.wear.ui.components.EdgeProgressRing
 import com.qmusic.wear.ui.components.SwipeBackBox
+import com.qmusic.wear.ui.components.rememberHaptics
 import com.qmusic.wear.ui.components.rotaryList
 import kotlinx.coroutines.launch
 
@@ -211,6 +212,7 @@ private fun RoundModeButton(
     active: Boolean,
     onClick: () -> Unit,
 ) {
+    val haptics = rememberHaptics()
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
@@ -220,7 +222,10 @@ private fun RoundModeButton(
                 if (active) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
             )
-            .clickable(onClick = onClick),
+            .clickable {
+                haptics.tap()
+                onClick()
+            },
     ) {
         Icon(
             painter = painterResource(resId),

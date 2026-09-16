@@ -20,11 +20,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,7 +58,8 @@ import com.qmusic.wear.data.model.SearchResult
 import com.qmusic.wear.data.model.Song
 import com.qmusic.wear.ui.components.GlassPanel
 import com.qmusic.wear.ui.components.GlassRow
-import com.qmusic.wear.ui.components.rotaryGeneric
+import com.qmusic.wear.ui.components.rememberHaptics
+import com.qmusic.wear.ui.components.rotaryList
 import com.qmusic.wear.ui.components.PageTitle
 import com.qmusic.wear.ui.components.PlaylistRow
 import com.qmusic.wear.ui.components.RoundCover
@@ -89,6 +91,7 @@ fun MineOverlay(
     // 凭据到期或接口全挂 → 顶部提示重新登录
     val sessionBad = (cred.isLogged && cred.isExpired) || ui.suspectSession
     var swipeAcc by remember { mutableFloatStateOf(0f) }
+    val haptics = rememberHaptics()
 
     LaunchedEffect(Unit) { vm.load() }
 
@@ -117,8 +120,14 @@ fun MineOverlay(
                     onDragEnd = {
                         // 左滑：返回上一级（推荐页）；右滑：同样关闭
                         when {
-                            swipeAcc < -70f -> onDismiss()
-                            swipeAcc > 70f -> onDismiss()
+                            swipeAcc < -70f -> {
+                                haptics.confirm()
+                                onDismiss()
+                            }
+                            swipeAcc > 70f -> {
+                                haptics.confirm()
+                                onDismiss()
+                            }
                         }
                         swipeAcc = 0f
                     },
@@ -150,7 +159,7 @@ fun MineOverlay(
                     .clip(RoundedCornerShape(24.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.62f))
                     .border(0.5.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
                 decorationBox = { inner ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -169,12 +178,12 @@ fun MineOverlay(
                         }
                         // 文本编辑区占剩余宽度，麦克风固定在右侧
                         Box(Modifier.weight(1f)) { inner() }
-                        Icon(
-                            painter = painterResource(R.drawable.ic_mic),
-                            contentDescription = "语音搜索",
-                            tint = MaterialTheme.colorScheme.primary,
+                        // 语音搜索：命中区扩到32dp（图标视觉16dp不变）
+                        Box(
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(16.dp)
+                                .size(32.dp)
+                                .clip(CircleShape)
                                 .clickable {
                                     val intent =
                                         Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -190,7 +199,14 @@ fun MineOverlay(
                                     // 设备无语音识别组件时静默忽略
                                     runCatching { voiceLauncher.launch(intent) }
                                 },
-                        )
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_mic),
+                                contentDescription = "语音搜索",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
                     }
                 },
             )
@@ -275,13 +291,12 @@ private fun MineTabs(
 ) {
     // 听歌统计（本地数据）
     val stats = ServiceLocator.playStats.weekStats.collectAsStateWithLifecycle().value
-    // 用 LazyColumn 承载列表（与搜索结果列表同款模式）：verticalScroll 与 rotaryScrollable
-    // 同节点叠加时，verticalScroll 会向内层传无限高度约束导致测量崩溃
-    val listState = rememberLazyListState()
-    LazyColumn(
+    // ScalingLazyColumn：圆屏自适应缩放 + 居中锚点，与首页/队列页滚动体验一致
+    val listState = rememberScalingLazyListState()
+    ScalingLazyColumn(
         Modifier
             .fillMaxWidth()
-            .rotaryGeneric(listState),
+            .rotaryList(listState),
         state = listState,
         verticalArrangement = Arrangement.spacedBy(6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -520,7 +535,7 @@ private fun SearchResults(
     )
     var sel by remember(result) { mutableStateOf(0) }
     val selIndex = if (sel >= tabs.size) 0 else sel
-    val searchListState = rememberLazyListState()
+    val searchListState = rememberScalingLazyListState()
 
     Column(Modifier.fillMaxSize()) {
         // 分区选择条
@@ -553,11 +568,11 @@ private fun SearchResults(
         }
 
         when (current.label) {
-            "歌手" -> LazyColumn(
+            "歌手" -> ScalingLazyColumn(
                 state = searchListState,
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.fillMaxSize().rotaryGeneric(searchListState),
+                modifier = Modifier.fillMaxSize().rotaryList(searchListState),
             ) {
                 items(result.singers) { singer ->
                     GlassRow(onClick = { onSearchSinger(singer.name) }) {
@@ -573,11 +588,11 @@ private fun SearchResults(
                 }
             }
 
-            "歌单" -> LazyColumn(
+            "歌单" -> ScalingLazyColumn(
                 state = searchListState,
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.fillMaxSize().rotaryGeneric(searchListState),
+                modifier = Modifier.fillMaxSize().rotaryList(searchListState),
             ) {
                 items(result.playlists) { pl ->
                     GlassRow(onClick = { onOpenPlaylist(pl) }) {
@@ -591,11 +606,11 @@ private fun SearchResults(
                 }
             }
 
-            else -> LazyColumn(
+            else -> ScalingLazyColumn(
                 state = searchListState,
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.fillMaxSize().rotaryGeneric(searchListState),
+                modifier = Modifier.fillMaxSize().rotaryList(searchListState),
             ) {
                 item { ListHeader2("播放全部") { onPlayAll(result.songs) } }
                 items(result.songs) { song ->
@@ -687,7 +702,11 @@ private fun SearchHistoryRow(
                 "清除",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.clickable { onClear() },
+                // 外扩命中区（视觉不变）
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onClear() }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
             )
         }
         androidx.compose.foundation.layout.FlowRow(

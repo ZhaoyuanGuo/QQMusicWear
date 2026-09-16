@@ -11,11 +11,16 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.wear.ambient.AmbientLifecycleObserver
 import kotlinx.coroutines.launch
 import com.qmusic.wear.ui.agreement.AgreementScreen
 import com.qmusic.wear.ui.components.LiveCapsule
@@ -48,6 +54,7 @@ import com.qmusic.wear.ui.downloads.DownloadsScreen
 import com.qmusic.wear.ui.source.SourceGateScreen
 import com.qmusic.wear.data.source.SourceManager
 import com.qmusic.wear.data.source.SourceState
+import com.qmusic.wear.ui.theme.LocalIsAmbient
 import com.qmusic.wear.ui.theme.QMusicTheme
 
 /** 全部页面（状态机导航，配合 AnimatedContent 实现页面过渡） */
@@ -55,13 +62,44 @@ private enum class Screen {
     Home, Player, Lyrics, Queue, Login, Recent, SongList, Settings, Downloads, Daily, Rank, Toplist, Square,
 }
 
+/** 是否具备 Wear OS 共享库（真手表具备；缺失环境跳过 AOD 注册避免闪退） */
+private fun hasWearableSharedLibrary(): Boolean = runCatching {
+    Class.forName("android.support.wearable.R\$version")
+}.isSuccess
+
+/** 页面导航深度：驱动方向化转场（浅→深新页从右滑入，深→浅新页从左滑入） */
+private fun navDepth(s: Screen): Int = when (s) {
+    Screen.Home -> 0
+    Screen.Player, Screen.Daily, Screen.Rank, Screen.Square, Screen.Recent, Screen.Settings, Screen.Downloads -> 1
+    Screen.Lyrics, Screen.Queue, Screen.Login, Screen.SongList, Screen.Toplist -> 2
+}
+
 class MainActivity : ComponentActivity() {
+
+    // AOD（环境模式）状态：Wear OS 4+ 经 AmbientLifecycleObserver 通知，CompositionLocal 下发
+    private val isAmbientState = mutableStateOf(false)
+    private val ambientCallback = object : AmbientLifecycleObserver.AmbientLifecycleCallback {
+        override fun onEnterAmbient(ambientDetails: AmbientLifecycleObserver.AmbientDetails) {
+            isAmbientState.value = true
+        }
+
+        override fun onExitAmbient() {
+            isAmbientState.value = false
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // AOD 观察依赖 wearable 共享库（com.google.android.wearable）；
+        // 缺库环境（如非手表模拟器）直接跳过注册，否则启动即抛 IllegalStateException
+        if (hasWearableSharedLibrary()) {
+            lifecycle.addObserver(AmbientLifecycleObserver(this, ambientCallback))
+        }
         setContent {
             QMusicTheme {
-                AppRoot()
+                CompositionLocalProvider(LocalIsAmbient provides isAmbientState.value) {
+                    AppRoot()
+                }
             }
         }
     }
@@ -174,7 +212,26 @@ private fun AppRoot() {
         AnimatedContent(
             targetState = screen,
             transitionSpec = {
-                fadeIn(tween(220)) togetherWith fadeOut(tween(220))
+                // 方向化转场：歌词从右推入、队列从下推入，其余按导航深度横向滑动
+                when {
+                    initialState == Screen.Player && targetState == Screen.Queue ->
+                        slideInVertically(tween(260)) { it } togetherWith
+                            slideOutVertically(tween(260)) { -it }
+
+                    initialState == Screen.Queue && targetState == Screen.Player ->
+                        slideInVertically(tween(260)) { -it } togetherWith
+                            slideOutVertically(tween(260)) { it }
+
+                    navDepth(targetState) > navDepth(initialState) ->
+                        slideInHorizontally(tween(260)) { it } togetherWith
+                            slideOutHorizontally(tween(260)) { -it }
+
+                    navDepth(targetState) < navDepth(initialState) ->
+                        slideInHorizontally(tween(260)) { -it } togetherWith
+                            slideOutHorizontally(tween(260)) { it }
+
+                    else -> fadeIn(tween(220)) togetherWith fadeOut(tween(220))
+                }
             },
             label = "page_nav",
         ) { s ->

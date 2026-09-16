@@ -1,5 +1,7 @@
 package com.qmusic.wear.ui.components
 
+import android.view.HapticFeedbackConstants
+import android.view.View
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -43,6 +45,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -548,6 +551,7 @@ fun SwipeBackBox(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val latestBack by rememberUpdatedState(onBack)
+    val haptics = rememberHaptics()
     var swipeAcc by remember { mutableFloatStateOf(0f) }
     Box(
         modifier
@@ -561,6 +565,7 @@ fun SwipeBackBox(
                     swipeAcc += dragAmount
                     if (swipeAcc > threshold) {
                         // 手指向右滑 → 返回上一页
+                        haptics.confirm()
                         latestBack()
                         swipeAcc = 0f
                     }
@@ -641,4 +646,26 @@ fun Modifier.rotaryGeneric(state: androidx.compose.foundation.gestures.Scrollabl
             focusRequester = focusRequester,
         ),
     )
+}
+
+// -------------------------------------------------------------------------
+// 触觉反馈
+// -------------------------------------------------------------------------
+
+/**
+ * 统一触觉反馈（走系统 View.performHapticFeedback，自动遵守系统"触摸振动"开关）：
+ * - tap：常规按钮点击（播放/切歌/收藏/模式切换等）
+ * - tick：表冠音量步进刻度
+ * - confirm：手势触发页面切换（滑动返回/换页）
+ */
+class QmHaptics(private val view: View) {
+    fun tap() = view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+    fun tick() = view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+    fun confirm() = view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+}
+
+@Composable
+fun rememberHaptics(): QmHaptics {
+    val view = LocalView.current
+    return remember { QmHaptics(view) }
 }

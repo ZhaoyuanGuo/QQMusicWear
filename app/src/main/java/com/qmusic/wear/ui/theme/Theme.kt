@@ -1,8 +1,12 @@
 package com.qmusic.wear.ui.theme
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.wear.compose.material3.MaterialTheme
+
+/** AOD（环境模式）标志：MainActivity 经 AmbientLifecycleObserver 更新，各页据此停动画/降亮度 */
+val LocalIsAmbient = staticCompositionLocalOf { false }
 
 // QQ 音乐品牌绿
 val QmGreen = Color(0xFF31C27C)

@@ -12,8 +12,8 @@ android {
         applicationId = "com.qmusic.wear"
         minSdk = 33
         targetSdk = 36
-        versionCode = 30
-        versionName = "1.9.2"
+        versionCode = 31
+        versionName = "1.9.3"
     }
 
     buildTypes {
@@ -55,6 +55,9 @@ dependencies {
     // Wear OS Compose（Material 3 Expressive）
     implementation("androidx.wear.compose:compose-material3:1.6.2")
     implementation("androidx.wear.compose:compose-foundation:1.6.2")
+
+    // Ambient（AOD）生命周期观察：Wear OS 4+ AmbientLifecycleObserver
+    implementation("androidx.wear:wear:1.3.0")
 
     // Wear OS Tiles（「正在播放」磁贴）
     implementation("androidx.wear.tiles:tiles:1.5.0")

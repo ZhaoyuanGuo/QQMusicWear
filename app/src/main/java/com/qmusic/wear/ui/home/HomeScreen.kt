@@ -1,14 +1,18 @@
 package com.qmusic.wear.ui.home
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -53,6 +58,7 @@ import coil3.compose.AsyncImage
 import com.qmusic.wear.R
 import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.ui.components.rotaryList
+import com.qmusic.wear.ui.components.rememberHaptics
 import com.qmusic.wear.ui.mine.MineOverlay
 
 /**
@@ -80,6 +86,7 @@ fun HomeScreen(
     val listState = rememberScalingLazyListState()
     var showMenu by rememberSaveable { mutableStateOf(false) }
     var swipeAcc by remember { mutableFloatStateOf(0f) }
+    val haptics = rememberHaptics()
 
     Box(Modifier.fillMaxSize()) {
         ScreenScaffold(
@@ -97,7 +104,10 @@ fun HomeScreen(
                             },
                             onDragEnd = {
                                 // 左右滑均打开「我的」选项卡（阈值防误触）
-                                if (kotlin.math.abs(swipeAcc) > 110f) showMenu = true
+                                if (kotlin.math.abs(swipeAcc) > 110f) {
+                                    haptics.confirm()
+                                    showMenu = true
+                                }
                                 swipeAcc = 0f
                             },
                         )
@@ -249,16 +259,28 @@ private fun BigCard(
     onOpen: () -> Unit,
 ) {
     val shape = RoundedCornerShape(18.dp)
+    // 按压弹性反馈：按下缩至0.97，松开回弹
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "card_press")
     Box(
         modifier = Modifier
             .fillMaxWidth()
             // 圆屏适配：左右收窄，避免直角边角被圆形表盘裁切
             .padding(horizontal = 18.dp)
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .height(104.dp)
             .clip(shape)
             .background(Brush.verticalGradient(colors))
             .border(0.5.dp, Color.White.copy(alpha = 0.14f), shape)
-            .clickable(onClick = onOpen)
+            .clickable(
+                interactionSource = interaction,
+                indication = LocalIndication.current,
+                onClick = onOpen,
+            )
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         // 右侧居中封面

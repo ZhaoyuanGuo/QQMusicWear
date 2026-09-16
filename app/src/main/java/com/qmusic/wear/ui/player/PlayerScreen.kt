@@ -1,8 +1,18 @@
 package com.qmusic.wear.ui.player
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
@@ -30,10 +40,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,8 +64,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
@@ -68,7 +84,9 @@ import com.qmusic.wear.data.model.Quality
 import com.qmusic.wear.ui.components.BlurCoverBackground
 import com.qmusic.wear.ui.components.EdgeProgressRing
 import com.qmusic.wear.ui.components.rememberCoverColor
+import com.qmusic.wear.ui.components.rememberHaptics
 import com.qmusic.wear.ui.components.rotaryGeneric
+import com.qmusic.wear.ui.theme.LocalIsAmbient
 import kotlin.math.abs
 
 /**
@@ -89,8 +107,21 @@ fun PlayerScreen(
 ) {
     val now by ServiceLocator.player.state.collectAsStateWithLifecycle()
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val isAmbient = LocalIsAmbient.current
+    val haptics = rememberHaptics()
     var swipeAcc by remember { mutableFloatStateOf(0f) }
     var swipeAccY by remember { mutableFloatStateOf(0f) }
+
+    // 表冠调音量时的临时音量指示（音量面板未打开时弹出，约1秒自动消失）
+    var volFlashTick by remember { mutableIntStateOf(0) }
+    var volFlashVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(volFlashTick) {
+        if (volFlashTick > 0) {
+            volFlashVisible = true
+            delay(900)
+            volFlashVisible = false
+        }
+    }
 
     // 表冠旋转调音量：自定义 ScrollableState，累计增量每 40px 触发一档音量步进
     val volAcc = remember { mutableFloatStateOf(0f) }
@@ -98,13 +129,19 @@ fun PlayerScreen(
         object : ScrollableState {
             override val isScrollInProgress: Boolean get() = false
             override fun dispatchRawDelta(delta: Float): Float {
+                // 仅在音量面板打开时表冠才调音量，防止误触
+                if (!ui.showVolume) return 0f
                 volAcc.floatValue += delta
                 var consumed = 0f
                 while (abs(volAcc.floatValue) >= 40f) {
                     val dir = if (volAcc.floatValue > 0f) 1 else -1
                     val next = (ServiceLocator.player.currentVolume + dir)
                         .coerceIn(0, ServiceLocator.player.maxVolume)
-                    if (next != ServiceLocator.player.currentVolume) vm.setVolume(next)
+                    if (next != ServiceLocator.player.currentVolume) {
+                        vm.setVolume(next)
+                        haptics.tick()
+                        volFlashTick++
+                    }
                     consumed += 40f * dir
                     volAcc.floatValue -= 40f * dir
                 }
@@ -127,8 +164,11 @@ fun PlayerScreen(
     } else 0f
 
     Box(Modifier.fillMaxSize()) {
-        // 封面高斯模糊铺满全屏（修复：封面只在小圆盘内、四周留黑的问题）
-        BlurCoverBackground(coverUrl = now.song?.cover500.orEmpty())
+        // 封面高斯模糊铺满全屏（修复：封面只在小圆盘内、四周留黑的问题）；AOD 下再压暗
+        BlurCoverBackground(
+            coverUrl = now.song?.cover500.orEmpty(),
+            scrim = if (isAmbient) 0.72f else 0.55f,
+        )
 
         // 环绕屏幕边界的播放进度（保留我们自己的环形进度条，不受内容边距影响）
         EdgeProgressRing(
@@ -155,8 +195,14 @@ fun PlayerScreen(
                             onDragEnd = {
                                 // 手指向左滑进歌词页，向右滑返回主页（页面流方向，与二级页右滑返回一致）
                                 when {
-                                    swipeAcc < -100f -> onOpenLyrics()
-                                    swipeAcc > 100f -> onBack()
+                                    swipeAcc < -100f -> {
+                                        haptics.confirm()
+                                        onOpenLyrics()
+                                    }
+                                    swipeAcc > 100f -> {
+                                        haptics.confirm()
+                                        onBack()
+                                    }
                                 }
                                 swipeAcc = 0f
                             },
@@ -170,7 +216,10 @@ fun PlayerScreen(
                                 swipeAccY += amount
                             },
                             onDragEnd = {
-                                if (swipeAccY < -80f) onOpenQueue()
+                                if (swipeAccY < -80f) {
+                                    haptics.confirm()
+                                    onOpenQueue()
+                                }
                                 swipeAccY = 0f
                             },
                         )
@@ -219,6 +268,37 @@ fun PlayerScreen(
                 }
             }
         }
+
+        // 表冠音量临时指示：玻璃小胶囊，约1秒自动消失
+        AnimatedVisibility(
+            visible = volFlashVisible && !ui.showVolume,
+            enter = fadeIn() + scaleIn(initialScale = 0.85f),
+            exit = fadeOut() + scaleOut(targetScale = 0.85f),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 64.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f))
+                    .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(50))
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_volume),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(13.dp),
+                )
+                Text(
+                    text = "音量 ${ui.volume}/${ui.maxVolume}",
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
     }
 }
 
@@ -228,10 +308,31 @@ private fun PlayerContent(
     vm: PlayerViewModel,
     onOpenDownloads: () -> Unit,
 ) {
+    val isAmbient = LocalIsAmbient.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // ---- 中央大圆盘（磁音同款）：封面填充，占短边 76%，圆心略上移给底部控件留位 ----
         val disc = minOf(maxWidth, maxHeight) * 0.76f
         val coverTint = rememberCoverColor(now.song?.cover500.orEmpty())
+
+        // 播放时封面缓慢旋转（约30秒/圈），暂停即停并轻微变暗；AOD 下静止
+        var discRotation by remember { mutableFloatStateOf(0f) }
+        LaunchedEffect(now.isPlaying, isAmbient) {
+            if (now.isPlaying && !isAmbient) {
+                var lastFrame = withFrameNanos { it }
+                while (true) {
+                    withFrameNanos { frameTime ->
+                        val dt = (frameTime - lastFrame) / 1_000_000_000f
+                        lastFrame = frameTime
+                        discRotation = (discRotation + dt * 12f) % 360f
+                    }
+                }
+            }
+        }
+        val coverAlpha by animateFloatAsState(
+            targetValue = if (now.isPlaying) 1f else 0.82f,
+            label = "cover_alpha",
+        )
+
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
@@ -245,13 +346,18 @@ private fun PlayerContent(
                 model = now.song?.cover500.orEmpty(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        rotationZ = discRotation
+                        alpha = coverAlpha
+                    },
             )
-            // 压暗保证盘内文字可读
+            // 压暗保证盘内文字可读（AOD 下再压暗一档降亮度）
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.30f)),
+                    .background(Color.Black.copy(alpha = if (isAmbient) 0.50f else 0.30f)),
             )
 
             // 控制键组：精确位于盘心——圆心处横向弦最宽，小圆屏也不会裁掉两侧切歌键
@@ -266,7 +372,7 @@ private fun PlayerContent(
                     iconSize = 18.dp,
                     onClick = { ServiceLocator.player.previous() },
                 )
-                QmPlayPauseButton(playing = now.isPlaying)
+                QmPlayPauseButton(playing = now.isPlaying, isAmbient = isAmbient)
                 QmIconButton(
                     resId = R.drawable.ic_qm_next,
                     contentDescription = stringResource(R.string.cd_next),
@@ -329,7 +435,8 @@ private fun SubControlsRow(
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val download = vm.ui.collectAsStateWithLifecycle().value.download
+    val uiState = vm.ui.collectAsStateWithLifecycle().value
+    val download = uiState.download
     val downloads by ServiceLocator.downloads.downloadsFlow.collectAsStateWithLifecycle()
     val likedMids by ServiceLocator.repository.likedMids.collectAsStateWithLifecycle()
     val curSong = now.song
@@ -338,7 +445,8 @@ private fun SubControlsRow(
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        // 命中区扩到42dp后缩小间距，视觉节奏接近原样
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         modifier = modifier,
     ) {
         SubControlChip(
@@ -369,13 +477,21 @@ private fun SubControlsRow(
             resId = R.drawable.ic_quality,
             contentDescription = stringResource(R.string.player_quality),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            // 角标显示当前音质，不点开也能看到（HQ/SQ/HR/128）
+            badge = when (uiState.selectedQuality) {
+                Quality.STANDARD -> "128"
+                Quality.HIGH -> "HQ"
+                Quality.LOSSLESS -> "SQ"
+                Quality.HI_RES -> "HR"
+            },
             onClick = { vm.toggleQuality() },
         )
         // 下载控件：空闲=下载图标 / 下载中=进度环 / 完成=对勾
         when {
             download.running -> Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.size(28.dp),
+                // 与其余按钮的42dp命中区对齐，避免状态切换时行内抖动
+                modifier = Modifier.size(42.dp),
             ) {
                 CircularProgressIndicator(
                     progress = { download.progress },
@@ -406,7 +522,7 @@ private fun SubControlsRow(
     }
 }
 
-/** 裸图标按钮（磁音样式：半透明白色圆底 + 白色图标） */
+/** 裸图标按钮（磁音样式：半透明白色圆底 + 白色图标）；命中区扩到42dp提升手指容错 */
 @Composable
 private fun QmIconButton(
     resId: Int,
@@ -414,26 +530,37 @@ private fun QmIconButton(
     iconSize: Dp,
     onClick: () -> Unit,
 ) {
+    val haptics = rememberHaptics()
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
-            .size(iconSize + 16.dp)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.16f))
-            .clickable(onClick = onClick),
+            .size(42.dp)
+            .clickable {
+                haptics.tap()
+                onClick()
+            },
     ) {
-        Icon(
-            painter = painterResource(resId),
-            contentDescription = contentDescription,
-            tint = Color.White,
-            modifier = Modifier.size(iconSize),
-        )
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(iconSize + 16.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.16f)),
+        ) {
+            Icon(
+                painter = painterResource(resId),
+                contentDescription = contentDescription,
+                tint = Color.White,
+                modifier = Modifier.size(iconSize),
+            )
+        }
     }
 }
 
-/** 大号播放/暂停键：品牌绿圆底 + 白色图标 + 光晕 + 弹性缩放（QQ 音乐手机版） */
+/** 大号播放/暂停键：品牌绿圆底 + 白色图标 + 呼吸光晕 + 弹性缩放（QQ 音乐手机版） */
 @Composable
-private fun QmPlayPauseButton(playing: Boolean) {
+private fun QmPlayPauseButton(playing: Boolean, isAmbient: Boolean) {
+    val haptics = rememberHaptics()
     val scale by animateFloatAsState(
         targetValue = if (playing) 1f else 0.94f,
         animationSpec = spring(
@@ -442,6 +569,16 @@ private fun QmPlayPauseButton(playing: Boolean) {
         ),
         label = "play_scale",
     )
+    // 播放时光晕呼吸起伏；暂停/AOD 静止为低亮度
+    val glowAlpha: Float = if (playing && !isAmbient) {
+        val pulse by rememberInfiniteTransition(label = "glow").animateFloat(
+            initialValue = 0.16f,
+            targetValue = 0.30f,
+            animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse),
+            label = "glow_pulse",
+        )
+        pulse
+    } else 0.13f
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier.graphicsLayer {
@@ -453,7 +590,7 @@ private fun QmPlayPauseButton(playing: Boolean) {
         Box(
             Modifier
                 .size(52.dp)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.20f), CircleShape),
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = glowAlpha), CircleShape),
         )
         Box(
             contentAlignment = Alignment.Center,
@@ -461,7 +598,10 @@ private fun QmPlayPauseButton(playing: Boolean) {
                 .size(44.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary)
-                .clickable { ServiceLocator.player.togglePlayPause() },
+                .clickable {
+                    haptics.tap()
+                    ServiceLocator.player.togglePlayPause()
+                },
         ) {
             // 线条形变图标：播放三角 ↔ 暂停双杠，按路径逐点插值流动（非缩放/淡入淡出）
             PlayPauseMorphIcon(playing = playing)
@@ -513,7 +653,7 @@ private fun PlayPauseMorphIcon(playing: Boolean) {
     }
 }
 
-/** 副控制小圆钮：半透明底 + 细描边（可选长按） */
+/** 副控制小圆钮：半透明底 + 细描边（可选长按）；命中区扩到42dp（视觉圆底28dp不变），可选角标 */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun SubControlChip(
@@ -523,22 +663,51 @@ private fun SubControlChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
+    badge: String? = null,
 ) {
+    val haptics = rememberHaptics()
     Box(
         contentAlignment = Alignment.Center,
+        // 命中区42dp，视觉圆底28dp不变
         modifier = modifier
-            .size(28.dp)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.09f))
-            .border(0.5.dp, Color.White.copy(alpha = 0.14f), CircleShape)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            .size(42.dp)
+            .combinedClickable(
+                onClick = {
+                    haptics.tap()
+                    onClick()
+                },
+                onLongClick = onLongClick,
+            ),
     ) {
-        Icon(
-            painter = painterResource(resId),
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(14.dp),
-        )
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.09f))
+                .border(0.5.dp, Color.White.copy(alpha = 0.14f), CircleShape),
+        ) {
+            Icon(
+                painter = painterResource(resId),
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        // 角标（音质指示）：骑在圆底右下角
+        if (badge != null) {
+            Text(
+                text = badge,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 6.sp, lineHeight = 7.sp),
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = (-4).dp, y = (-5).dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 2.dp),
+            )
+        }
     }
 }
 
