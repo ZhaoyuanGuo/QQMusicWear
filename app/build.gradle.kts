@@ -12,8 +12,8 @@ android {
         applicationId = "com.qmusic.wear"
         minSdk = 33
         targetSdk = 36
-        versionCode = 28
-        versionName = "1.9.0"
+        versionCode = 29
+        versionName = "1.9.1"
     }
 
     buildTypes {
@@ -76,6 +76,9 @@ dependencies {
 
     // JS 引擎（音乐源插件运行时；纯 Java 实现无 ABI 限制）
     implementation("org.mozilla:rhino:1.7.15")
+
+    // Ed25519 签名校验（BouncyCastle 底层 API：Android 部分设备的 JCA 未注册 Ed25519 KeyFactory）
+    implementation("org.bouncycastle:bcprov-jdk18on:1.79")
 
     // 图片加载（Coil3 必须显式引入网络组件，否则 http 封面无法加载）
     implementation("io.coil-kt.coil3:coil-compose:3.3.0")

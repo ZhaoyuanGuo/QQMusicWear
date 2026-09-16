@@ -83,4 +83,16 @@ class SourceVerifierTest {
         val ok = Signature.getInstance("Ed25519").apply { initVerify(pub); update(data) }.verify(sig)
         assertTrue(ok)
     }
+
+    @Test
+    fun `bc selftest roundtrip with jdk encodings`() {
+        // 运行时走 BouncyCastle 路径：确保 JDK 签发的 PKCS8/SPKI 编码可被 BC 正确解析
+        val kp = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+        val ok = SourceVerifier.selfTestRoundtrip(
+            Base64.getEncoder().encodeToString(kp.private.encoded),
+            Base64.getEncoder().encodeToString(kp.public.encoded),
+            "roundtrip-bc".toByteArray(Charsets.UTF_8),
+        )
+        assertTrue(ok)
+    }
 }

@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -123,30 +124,32 @@ object SourceManager {
 
     /** 从镜像下载源脚本（设置页「更新音乐源」也走这里）；已就绪时失败不改变状态 */
     suspend fun downloadNow(): Boolean = mutex.withLock {
-        val wasReady = engine != null
-        if (!wasReady) _state.value = SourceState.Downloading(0f)
-        val script = fetchFromMirrors(reportProgress = !wasReady)
-        if (script == null) {
-            if (!wasReady) _state.value = SourceState.Failed("下载失败：所有镜像均不可达")
-            return false
+        withContext(Dispatchers.IO) {
+            val wasReady = engine != null
+            if (!wasReady) _state.value = SourceState.Downloading(0f)
+            val script = fetchFromMirrors(reportProgress = !wasReady)
+            if (script == null) {
+                if (!wasReady) _state.value = SourceState.Failed("下载失败：所有镜像均不可达")
+                return@withContext false
+            }
+            if (!script.contains("qmu.register")) {
+                if (!wasReady) _state.value = SourceState.Failed("下载失败：源文件内容无效")
+                return@withContext false
+            }
+            val sigError = SourceVerifier.verify(script)
+            if (sigError != null) {
+                Log.w(TAG, "源签名校验失败: $sigError")
+                if (!wasReady) _state.value = SourceState.Failed("安全校验未通过（$sigError），已拒绝加载")
+                return@withContext false
+            }
+            val ok = installScript(script, "网络下载")
+            if (ok) {
+                persistCache(script)
+            } else if (!wasReady) {
+                _state.value = SourceState.Failed("源脚本加载失败")
+            }
+            ok
         }
-        if (!script.contains("qmu.register")) {
-            if (!wasReady) _state.value = SourceState.Failed("下载失败：源文件内容无效")
-            return false
-        }
-        val sigError = SourceVerifier.verify(script)
-        if (sigError != null) {
-            Log.w(TAG, "源签名校验失败: $sigError")
-            if (!wasReady) _state.value = SourceState.Failed("安全校验未通过（$sigError），已拒绝加载")
-            return false
-        }
-        val ok = installScript(script, "网络下载")
-        if (ok) {
-            persistCache(script)
-        } else if (!wasReady) {
-            _state.value = SourceState.Failed("源脚本加载失败")
-        }
-        return ok
     }
 
     /** 业务调用入口：转发到引擎处理器，异常统一抛出；期间挂载全局事件回调 */
@@ -179,20 +182,22 @@ object SourceManager {
      * 返回 null = 成功，非 null = 失败原因；同样强制签名校验。
      */
     suspend fun importScript(script: String): String? = mutex.withLock {
-        val wasReady = engine != null
-        val sigError = SourceVerifier.verify(script)
-            ?: if (script.contains("qmu.register")) null else "源文件内容无效"
-        if (sigError != null) {
-            if (!wasReady) _state.value = SourceState.Failed("导入失败：$sigError")
-            return sigError
-        }
-        val ok = installScript(script, "本地导入")
-        if (ok) {
-            persistCache(script)
-            null
-        } else {
-            if (!wasReady) _state.value = SourceState.Failed("导入失败：源脚本加载失败")
-            "源脚本加载失败"
+        withContext(Dispatchers.IO) {
+            val wasReady = engine != null
+            val sigError = SourceVerifier.verify(script)
+                ?: if (script.contains("qmu.register")) null else "源文件内容无效"
+            if (sigError != null) {
+                if (!wasReady) _state.value = SourceState.Failed("导入失败：$sigError")
+                return@withContext sigError
+            }
+            val ok = installScript(script, "本地导入")
+            if (ok) {
+                persistCache(script)
+                null
+            } else {
+                if (!wasReady) _state.value = SourceState.Failed("导入失败：源脚本加载失败")
+                "源脚本加载失败"
+            }
         }
     }
 
@@ -201,25 +206,27 @@ object SourceManager {
     private fun hasCache(): Boolean = java.io.File(filesDir, FILE_NAME).exists()
 
     private suspend fun loadCached(): Boolean = mutex.withLock {
-        val f = java.io.File(filesDir, FILE_NAME)
-        if (!f.exists()) {
-            _state.value = SourceState.Missing
-            return false
+        withContext(Dispatchers.IO) {
+            val f = java.io.File(filesDir, FILE_NAME)
+            if (!f.exists()) {
+                _state.value = SourceState.Missing
+                return@withContext false
+            }
+            val script = f.readText()
+            if (SourceVerifier.verify(script) != null) {
+                // 缓存被篡改/损坏：删除并回到 Missing，等待重新下载
+                f.delete()
+                _state.value = SourceState.Missing
+                return@withContext false
+            }
+            val ok = installScript(script, "本地缓存")
+            if (!ok) {
+                // 缓存损坏：删除并回到 Missing，等待重新下载
+                f.delete()
+                _state.value = SourceState.Missing
+            }
+            ok
         }
-        val script = f.readText()
-        if (SourceVerifier.verify(script) != null) {
-            // 缓存被篡改/损坏：删除并回到 Missing，等待重新下载
-            f.delete()
-            _state.value = SourceState.Missing
-            return false
-        }
-        val ok = installScript(script, "本地缓存")
-        if (!ok) {
-            // 缓存损坏：删除并回到 Missing，等待重新下载
-            f.delete()
-            _state.value = SourceState.Missing
-        }
-        return ok
     }
 
     private fun fetchFromMirrors(reportProgress: Boolean = true): String? {

@@ -109,8 +109,11 @@ private fun AppRoot() {
                 }
             }
         }
-        LaunchedEffect(sourceState) {
-            if (sourceState is SourceState.Missing || sourceState is SourceState.Failed) {
+        // 自动下载只触发一次（key=Unit）：若以 sourceState 为 key，状态变为 Downloading 会
+        // 取消正在运行的下载协程（"coroutine scope left the composition"）。
+        // 仅 Missing 态触发；Failed 态等待用户手动「重试」，避免失败重试循环。
+        LaunchedEffect(Unit) {
+            if (SourceManager.state.value is SourceState.Missing) {
                 SourceManager.downloadNow()
             }
         }
