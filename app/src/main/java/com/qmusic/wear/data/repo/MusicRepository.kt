@@ -26,9 +26,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /** 播放地址解析与各页面数据仓库（协议实现均在音乐源插件内） */
-class MusicRepository(private val api: QMusicApi) {
+class MusicRepository(
+    private val api: QMusicApi,
+    private val localLikes: com.qmusic.wear.data.store.LocalLikesStore,
+) {
 
-    /** 「我喜欢」歌曲 mid 集合（红心状态；上限 100 首，超出部分不显示红心） */
+    /** 「我喜欢」歌曲 mid 集合（红心状态；云端 + 本地合并，上限 200 首） */
     private val _likedMids = MutableStateFlow<Set<String>>(emptySet())
     val likedMids: StateFlow<Set<String>> = _likedMids.asStateFlow()
 
@@ -141,29 +144,64 @@ class MusicRepository(private val api: QMusicApi) {
     var lastResolveDebug: String = ""
         private set
 
-    /** 拉取「我喜欢」歌单曲目，更新红心集合（登录态才执行） */
+    /**
+     * 拉取「我喜欢」并更新红心集合。
+     * 登录态：先把本地红心一次性合并上云，再拉云端集合；未登录：显示本地红心。
+     */
     suspend fun refreshLikedMids() {
         if (!api.credentialProvider().isLogged) {
-            _likedMids.value = emptySet()
+            _likedMids.value = localLikes.mids
             return
         }
         runCatching {
-            val liked = allMyPlaylists().firstOrNull { it.name.contains("我喜欢") } ?: return
-            val (_, songs) = playlist(liked.disstid)
-            _likedMids.value = songs.map { it.mid }.toSet()
+            mergeLocalLikesToCloud()
+            val liked = allMyPlaylists().firstOrNull { it.name.contains("我喜欢") }
+            val cloudMids = if (liked != null) {
+                playlist(liked.disstid).second.map { it.mid }.toSet()
+            } else {
+                emptySet()
+            }
+            _likedMids.value = cloudMids + localLikes.mids
+        }.onFailure {
+            // 云端拉取失败时至少保留本地红心可见
+            _likedMids.value = localLikes.mids
         }
     }
 
-    /** 加入/移出「我喜欢」，成功后同步本地红心集合 */
+    /** 加入/移出「我喜欢」：登录走云端，未登录落本地红心（登录后自动合并） */
     suspend fun setLiked(song: Song, like: Boolean): Boolean {
-        val ok = api.setLike(song.songId, like)
-        if (ok) {
-            _likedMids.value = if (like) {
-                _likedMids.value + song.mid
-            } else {
-                _likedMids.value - song.mid
+        if (api.credentialProvider().isLogged) {
+            val ok = api.setLike(song.songId, like)
+            if (ok) {
+                _likedMids.value = if (like) {
+                    _likedMids.value + song.mid
+                } else {
+                    _likedMids.value - song.mid
+                }
             }
+            return ok
         }
-        return ok
+        // 未登录：本地红心
+        if (like) localLikes.add(song) else localLikes.remove(song.mid)
+        _likedMids.value = if (like) {
+            _likedMids.value + song.mid
+        } else {
+            _likedMids.value - song.mid
+        }
+        return true
+    }
+
+    /** 把本地红心合并到云端「我喜欢」（成功一首清一首，失败的保留待下次再试） */
+    private suspend fun mergeLocalLikesToCloud() {
+        val local = localLikes.songs
+        if (local.isEmpty()) return
+        val failedMids = mutableListOf<String>()
+        local.forEach { s ->
+            val ok = runCatching { api.setLike(s.songId, true) }.getOrDefault(false)
+            if (!ok) failedMids.add(s.mid)
+        }
+        if (failedMids.size < local.size) {
+            localLikes.removeMids(local.map { it.mid }.filterNot { it in failedMids.toSet() })
+        }
     }
 }

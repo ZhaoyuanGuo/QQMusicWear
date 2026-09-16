@@ -48,6 +48,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import androidx.wear.compose.foundation.lazy.ScalingLazyListState
+import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
+import androidx.wear.compose.foundation.rotary.rotaryScrollable
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
@@ -606,4 +609,36 @@ fun LiveCapsule(
                 .basicMarquee(),
         )
     }
+}
+
+/**
+ * 表冠旋转滚动（列表页通用）：给页面根布局挂 rotaryScrollable，
+ * 旋转表冠驱动 ScalingLazyColumn 滚动（贴合 One UI 8 Watch 的列表操作习惯）。
+ * 用法：在页面根 Box/ScreenScaffold 内容上 `.rotaryList(listState)`。
+ */
+@Composable
+fun Modifier.rotaryList(state: androidx.wear.compose.foundation.lazy.ScalingLazyListState): Modifier {
+    val focusRequester = androidx.compose.ui.focus.FocusRequester()
+    androidx.compose.runtime.LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    return then(
+        rotaryScrollable(
+            behavior = RotaryScrollableDefaults.snapBehavior(state),
+            focusRequester = focusRequester,
+        ),
+    )
+}
+
+/**
+ * 表冠旋转滚动（普通滚动容器）：适配 LazyColumn / verticalScroll 的 ScrollableState。
+ */
+@Composable
+fun Modifier.rotaryGeneric(state: androidx.compose.foundation.gestures.ScrollableState): Modifier {
+    val focusRequester = androidx.compose.ui.focus.FocusRequester()
+    androidx.compose.runtime.LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    return then(
+        rotaryScrollable(
+            behavior = RotaryScrollableDefaults.behavior(state),
+            focusRequester = focusRequester,
+        ),
+    )
 }

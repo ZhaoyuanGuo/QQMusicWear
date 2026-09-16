@@ -56,6 +56,10 @@ object ServiceLocator {
         private set
     lateinit var agreementStore: com.qmusic.wear.data.store.AgreementStore
         private set
+    lateinit var localLikes: com.qmusic.wear.data.store.LocalLikesStore
+        private set
+    lateinit var playStats: com.qmusic.wear.data.store.PlayStatsStore
+        private set
 
     private val _credential = MutableStateFlow(Credential.EMPTY)
     val credential: StateFlow<Credential> = _credential.asStateFlow()
@@ -80,7 +84,9 @@ object ServiceLocator {
             }
         }
         api = QMusicApi { _credential.value }
-        repository = MusicRepository(api)
+        localLikes = com.qmusic.wear.data.store.LocalLikesStore(appContext)
+        playStats = com.qmusic.wear.data.store.PlayStatsStore(appContext)
+        repository = MusicRepository(api, localLikes)
         qrLogin = QrLoginManager()
         player = PlayerConnection(appContext, historyStore)
         downloads = com.qmusic.wear.data.download.DownloadManager(appContext, api.http)

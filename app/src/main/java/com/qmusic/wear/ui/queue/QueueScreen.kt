@@ -50,6 +50,7 @@ import com.qmusic.wear.data.model.PlayMode
 import com.qmusic.wear.data.model.Song
 import com.qmusic.wear.ui.components.EdgeProgressRing
 import com.qmusic.wear.ui.components.SwipeBackBox
+import com.qmusic.wear.ui.components.rotaryList
 import kotlinx.coroutines.launch
 
 /**
@@ -89,7 +90,7 @@ fun QueueScreen(
                 contentPadding = contentPadding,
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().rotaryList(listState),
             ) {
                 // 头部：模式钮 | 标题+计数 | 定位钮（磁音三段式）
                 item {

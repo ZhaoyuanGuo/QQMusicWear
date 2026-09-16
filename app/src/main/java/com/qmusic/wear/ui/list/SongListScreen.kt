@@ -36,6 +36,7 @@ import com.qmusic.wear.R
 import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.ui.components.PlaylistHeader
 import com.qmusic.wear.ui.components.SongRow
+import com.qmusic.wear.ui.components.rotaryList
 import kotlinx.coroutines.launch
 
 /** 歌单详情页：支持分页加载（大歌单）、全部下载、长按收藏 */
@@ -66,7 +67,7 @@ fun SongListScreen(
             contentPadding = contentPadding,
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().rotaryList(listState),
         ) {
             item {
                 PlaylistHeader(
@@ -136,7 +137,8 @@ fun SongListScreen(
                         liked = likedMids.contains(song.mid),
                         downloaded = downloadedSet.any { it.song.mid == song.mid },
                         onClick = {
-                            vm.playFrom(song.mid)
+                            // 点播加入队列：追加到当前队列尾部并播放该曲（歌单其余歌曲不动）
+                            ServiceLocator.player.enqueueAndPlay(song)
                             onOpenPlayer()
                         },
                         onLongClick = {

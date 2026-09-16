@@ -42,6 +42,7 @@ import com.qmusic.wear.ui.components.GlassPanel
 import com.qmusic.wear.ui.components.GlassRow
 import com.qmusic.wear.ui.components.PageTitle
 import com.qmusic.wear.ui.components.SectionHeader
+import com.qmusic.wear.ui.components.rotaryList
 import com.qmusic.wear.util.msTo_mmss
 
 /**
@@ -105,7 +106,7 @@ fun SettingsScreen(
             contentPadding = contentPadding,
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().rotaryList(listState),
         ) {
             item { PageTitle("设置") }
 

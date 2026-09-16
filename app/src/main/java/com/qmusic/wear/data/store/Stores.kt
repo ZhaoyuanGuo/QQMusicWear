@@ -233,6 +233,209 @@ class SearchHistoryStore(context: Context) {
 }
 
 /**
+ * 「我喜欢」本地红心（未登录时使用；登录后自动合并到云端，见 MusicRepository）。
+ * 序列化与 [HistoryStore] 同风格：手写 JSON，避免给领域模型引入 @Serializable 污染。
+ */
+class LocalLikesStore(context: Context) {
+
+    private val prefs = context.getSharedPreferences("qmusic_likes", Context.MODE_PRIVATE)
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    private val _songsFlow = MutableStateFlow(read())
+    val songsFlow: StateFlow<List<Song>> = _songsFlow.asStateFlow()
+
+    val songs: List<Song> get() = _songsFlow.value
+    val mids: Set<String> get() = _songsFlow.value.map { it.mid }.toSet()
+
+    private fun read(): List<Song> = runCatching {
+        val text = prefs.getString(KEY_LIKES, null) ?: return emptyList()
+        json.parseToJsonElement(text).jsonArray
+            .filterIsInstance<JsonObject>()
+            .mapNotNull { obj ->
+                val mid = obj.str("mid")
+                if (mid.isEmpty()) return@mapNotNull null
+                Song(
+                    songId = obj.long("songId"),
+                    mid = mid,
+                    name = obj.str("name"),
+                    singers = obj.str("singers"),
+                    albumName = obj.str("albumName"),
+                    albumMid = obj.str("albumMid"),
+                    mediaMid = obj.str("mediaMid"),
+                    intervalSec = obj.int("intervalSec"),
+                    songType = obj.int("songType"),
+                )
+            }
+    }.getOrDefault(emptyList())
+
+    fun add(song: Song) {
+        if (song.mid.isEmpty() || _songsFlow.value.any { it.mid == song.mid }) return
+        val updated = (listOf(song) + _songsFlow.value).take(MAX_LIKES)
+        _songsFlow.value = updated
+        persist(updated)
+    }
+
+    fun remove(mid: String) {
+        if (_songsFlow.value.none { it.mid == mid }) return
+        val updated = _songsFlow.value.filterNot { it.mid == mid }
+        _songsFlow.value = updated
+        persist(updated)
+    }
+
+    /** 批量移除（合并成功后清掉对应本地记录） */
+    fun removeMids(mids: Collection<String>) {
+        val set = mids.toSet()
+        if (set.isEmpty()) return
+        val updated = _songsFlow.value.filterNot { it.mid in set }
+        if (updated.size == _songsFlow.value.size) return
+        _songsFlow.value = updated
+        persist(updated)
+    }
+
+    private fun persist(songs: List<Song>) {
+        val arr = buildJsonArray {
+            songs.forEach { s ->
+                add(buildJsonObject {
+                    put("songId", s.songId)
+                    put("mid", s.mid)
+                    put("name", s.name)
+                    put("singers", s.singers)
+                    put("albumName", s.albumName)
+                    put("albumMid", s.albumMid)
+                    put("mediaMid", s.mediaMid)
+                    put("intervalSec", s.intervalSec)
+                    put("songType", s.songType)
+                })
+            }
+        }
+        prefs.edit().putString(KEY_LIKES, arr.toString()).apply()
+    }
+
+    private companion object {
+        const val KEY_LIKES = "liked_songs"
+        const val MAX_LIKES = 200
+    }
+}
+
+/** 本地播放统计的单条记录 */
+data class PlayEvent(
+    val mid: String,
+    val name: String,
+    val singers: String,
+    /** 触发时间（毫秒） */
+    val ts: Long,
+    /** 歌曲时长（秒，来自曲目信息，作为已听时长的近似值） */
+    val sec: Int,
+)
+
+/** 本周听歌统计快照 */
+data class WeekStats(
+    val totalSec: Int = 0,
+    val playCount: Int = 0,
+    /** 本周最常听的歌曲名（无记录为空串） */
+    val topName: String = "",
+    val topSingers: String = "",
+    val topCount: Int = 0,
+)
+
+/**
+ * 听歌统计（本地持久化，仅记录「切到某首歌」事件 + 曲目时长近似）。
+ * 保留最近 30 天，供「我的」页展示本周时长与最常听歌曲。
+ */
+class PlayStatsStore(context: Context) {
+
+    private val prefs = context.getSharedPreferences("qmusic_stats", Context.MODE_PRIVATE)
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    private val _events = MutableStateFlow(read())
+    val events: StateFlow<List<PlayEvent>> = _events.asStateFlow()
+
+    /** 最近 7 天的统计快照（事件变化时重算） */
+    private val _weekStats = MutableStateFlow(computeWeek(_events.value))
+    val weekStats: StateFlow<WeekStats> = _weekStats.asStateFlow()
+
+    private fun read(): List<PlayEvent> = runCatching {
+        val text = prefs.getString(KEY_EVENTS, null) ?: return emptyList()
+        json.parseToJsonElement(text).jsonArray
+            .filterIsInstance<JsonObject>()
+            .mapNotNull { obj ->
+                val mid = obj.str("mid")
+                if (mid.isEmpty()) return@mapNotNull null
+                PlayEvent(
+                    mid = mid,
+                    name = obj.str("name"),
+                    singers = obj.str("singers"),
+                    ts = obj.long("ts"),
+                    sec = obj.int("sec"),
+                )
+            }
+    }.getOrDefault(emptyList())
+
+    /** 记录一次「切歌」事件（时长取歌曲自身时长作近似） */
+    fun record(song: Song, atMs: Long = System.currentTimeMillis()) {
+        if (song.mid.isEmpty()) return
+        val ev = PlayEvent(
+            mid = song.mid,
+            name = song.name,
+            singers = song.singers,
+            ts = atMs,
+            sec = song.intervalSec,
+        )
+        val cutoff = atMs - KEEP_MS
+        val updated = (listOf(ev) + _events.value).filter { it.ts >= cutoff }.take(MAX_EVENTS)
+        _events.value = updated
+        _weekStats.value = computeWeek(updated)
+        persist(updated)
+    }
+
+    fun clear() {
+        prefs.edit().remove(KEY_EVENTS).apply()
+        _events.value = emptyList()
+        _weekStats.value = WeekStats()
+    }
+
+    private fun computeWeek(events: List<PlayEvent>): WeekStats {
+        val cutoff = System.currentTimeMillis() - WEEK_MS
+        val week = events.filter { it.ts >= cutoff }
+        if (week.isEmpty()) return WeekStats()
+        val top = week.groupBy { it.mid }
+            .maxByOrNull { (_, list) -> list.size }
+            ?.value
+            ?.maxByOrNull { it.ts }
+        val topCount = top?.let { t -> week.count { it.mid == t.mid } } ?: 0
+        return WeekStats(
+            totalSec = week.sumOf { it.sec },
+            playCount = week.size,
+            topName = top?.name.orEmpty(),
+            topSingers = top?.singers.orEmpty(),
+            topCount = topCount,
+        )
+    }
+
+    private fun persist(events: List<PlayEvent>) {
+        val arr = buildJsonArray {
+            events.forEach { e ->
+                add(buildJsonObject {
+                    put("mid", e.mid)
+                    put("name", e.name)
+                    put("singers", e.singers)
+                    put("ts", e.ts)
+                    put("sec", e.sec)
+                })
+            }
+        }
+        prefs.edit().putString(KEY_EVENTS, arr.toString()).apply()
+    }
+
+    private companion object {
+        const val KEY_EVENTS = "play_events"
+        const val MAX_EVENTS = 2000
+        const val KEEP_MS = 30L * 24 * 3600 * 1000
+        const val WEEK_MS = 7L * 24 * 3600 * 1000
+    }
+}
+
+/**
  * 用户协议：按版本号记录已同意状态。
  * 首启未同意时弹窗；协议内容修订后把 [AGREEMENT_VERSION] +1，老用户会重新收到弹窗。
  */

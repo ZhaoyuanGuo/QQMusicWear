@@ -26,6 +26,7 @@ import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.data.download.Downloaded
 import com.qmusic.wear.ui.components.PageTitle
+import com.qmusic.wear.ui.components.rotaryList
 import com.qmusic.wear.ui.components.SongRow
 
 /**
@@ -53,7 +54,7 @@ fun DownloadsScreen(
             contentPadding = contentPadding,
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().rotaryList(listState),
         ) {
             item {
                 PageTitle(
@@ -79,10 +80,8 @@ fun DownloadsScreen(
                         playing = now.song?.mid == d.song.mid,
                         downloaded = true,
                         onClick = {
-                            ServiceLocator.player.playFromList(
-                                downloads.map { it.song },
-                                d.song.mid,
-                            )
+                            // 点播加入队列：追加到当前队列尾部并播放该曲（其余歌曲不动）
+                            ServiceLocator.player.enqueueAndPlay(d.song)
                             onOpenPlayer()
                         },
                         onLongClick = { pendingDelete = d },

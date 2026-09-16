@@ -25,6 +25,7 @@ import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.ui.components.PageTitle
 import com.qmusic.wear.ui.components.SongRow
+import com.qmusic.wear.ui.components.rotaryList
 import kotlinx.coroutines.launch
 
 /**
@@ -60,7 +61,7 @@ fun DailyScreen(
             ),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().rotaryList(listState),
         ) {
             item { PageTitle("每日30首") }
 
@@ -82,7 +83,8 @@ fun DailyScreen(
                         liked = likedMids.contains(song.mid),
                         downloaded = downloadedSet.any { it.song.mid == song.mid },
                         onClick = {
-                            vm.playFrom(songs = ui.songs, mid = song.mid)
+                            // 点播加入队列：追加到当前队列尾部并播放该曲（其余歌曲不动）
+                            ServiceLocator.player.enqueueAndPlay(song)
                             onOpenPlayer()
                         },
                         onLongClick = {

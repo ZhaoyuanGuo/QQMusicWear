@@ -4,10 +4,13 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.ScrollScope
+import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +68,8 @@ import com.qmusic.wear.data.model.Quality
 import com.qmusic.wear.ui.components.BlurCoverBackground
 import com.qmusic.wear.ui.components.EdgeProgressRing
 import com.qmusic.wear.ui.components.rememberCoverColor
+import com.qmusic.wear.ui.components.rotaryGeneric
+import kotlin.math.abs
 
 /**
  * 播放页（参考磁音手表版圆盘布局，480×480 圆屏）：
@@ -86,6 +91,36 @@ fun PlayerScreen(
     val ui by vm.ui.collectAsStateWithLifecycle()
     var swipeAcc by remember { mutableFloatStateOf(0f) }
     var swipeAccY by remember { mutableFloatStateOf(0f) }
+
+    // 表冠旋转调音量：自定义 ScrollableState，累计增量每 40px 触发一档音量步进
+    val volAcc = remember { mutableFloatStateOf(0f) }
+    val volScrollState = remember {
+        object : ScrollableState {
+            override val isScrollInProgress: Boolean get() = false
+            override fun dispatchRawDelta(delta: Float): Float {
+                volAcc.floatValue += delta
+                var consumed = 0f
+                while (abs(volAcc.floatValue) >= 40f) {
+                    val dir = if (volAcc.floatValue > 0f) 1 else -1
+                    val next = (ServiceLocator.player.currentVolume + dir)
+                        .coerceIn(0, ServiceLocator.player.maxVolume)
+                    if (next != ServiceLocator.player.currentVolume) vm.setVolume(next)
+                    consumed += 40f * dir
+                    volAcc.floatValue -= 40f * dir
+                }
+                return consumed
+            }
+            override suspend fun scroll(
+                scrollPriority: MutatePriority,
+                block: suspend ScrollScope.() -> Unit,
+            ) {
+                // 表冠为增量事件：把滚动范围委托给 dispatchRawDelta 直接消费
+                block(object : ScrollScope {
+                    override fun scrollBy(pixels: Float): Float = dispatchRawDelta(pixels)
+                })
+            }
+        }
+    }
 
     val progress = if (now.durationMs > 0) {
         (now.positionMs.toFloat() / now.durationMs).coerceIn(0f, 1f)
@@ -110,6 +145,7 @@ fun PlayerScreen(
                 Modifier
                     .fillMaxSize()
                     .padding(contentPadding)
+                    .rotaryGeneric(volScrollState)
                     .pointerInput(Unit) {
                         detectHorizontalDragGestures(
                             onHorizontalDrag = { change, amount ->

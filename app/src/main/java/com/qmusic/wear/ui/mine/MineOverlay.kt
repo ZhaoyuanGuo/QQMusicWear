@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -51,7 +52,9 @@ import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.SearchResult
 import com.qmusic.wear.data.model.Song
+import com.qmusic.wear.ui.components.GlassPanel
 import com.qmusic.wear.ui.components.GlassRow
+import com.qmusic.wear.ui.components.rotaryGeneric
 import com.qmusic.wear.ui.components.PageTitle
 import com.qmusic.wear.ui.components.PlaylistRow
 import com.qmusic.wear.ui.components.RoundCover
@@ -185,8 +188,8 @@ fun MineOverlay(
                 else -> SearchResults(
                     result = search.result ?: SearchResult(),
                     onPlaySong = { song ->
-                        // 把整个搜索结果的歌作为队列，从点的那首开始播
-                        vm.playFrom(search.result?.songs ?: listOf(song), song.mid)
+                        // 点播加入队列：追加到当前队列尾部并播放该曲（其余歌曲不动）
+                        ServiceLocator.player.enqueueAndPlay(song)
                         onDismiss()
                         onOpenPlayer()
                     },
@@ -229,10 +232,12 @@ private fun MineTabs(
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    val scrollState = rememberScrollState()
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(scrollState)
+            .rotaryGeneric(scrollState),
         verticalArrangement = Arrangement.spacedBy(6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -302,6 +307,45 @@ private fun MineTabs(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(15.dp),
                 )
+            }
+        }
+
+        // ---- 听歌统计（本地数据） ----
+        val stats = ServiceLocator.playStats.weekStats.collectAsStateWithLifecycle().value
+        if (stats.playCount > 0) {
+            val hours = stats.totalSec / 3600
+            val mins = (stats.totalSec % 3600) / 60
+            val durText = when {
+                hours > 0 -> "${hours}小时${mins}分钟"
+                mins > 0 -> "${mins}分钟"
+                else -> "刚刚开始"
+            }
+            GlassPanel {
+                Column(Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_history),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(17.dp),
+                        )
+                        Spacer(Modifier.size(10.dp))
+                        Text(
+                            "本周已听 $durText · ${stats.playCount}次",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    if (stats.topName.isNotEmpty()) {
+                        Spacer(Modifier.size(4.dp))
+                        Text(
+                            "最常听：${stats.topName} · ${stats.topSingers}（${stats.topCount}次）",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
 
@@ -418,6 +462,7 @@ private fun SearchResults(
     )
     var sel by remember(result) { mutableStateOf(0) }
     val selIndex = if (sel >= tabs.size) 0 else sel
+    val searchListState = rememberLazyListState()
 
     Column(Modifier.fillMaxSize()) {
         // 分区选择条
@@ -451,9 +496,10 @@ private fun SearchResults(
 
         when (current.label) {
             "歌手" -> LazyColumn(
+                state = searchListState,
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().rotaryGeneric(searchListState),
             ) {
                 items(result.singers) { singer ->
                     GlassRow(onClick = { onSearchSinger(singer.name) }) {
@@ -470,9 +516,10 @@ private fun SearchResults(
             }
 
             "歌单" -> LazyColumn(
+                state = searchListState,
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().rotaryGeneric(searchListState),
             ) {
                 items(result.playlists) { pl ->
                     GlassRow(onClick = { onOpenPlaylist(pl) }) {
@@ -487,9 +534,10 @@ private fun SearchResults(
             }
 
             else -> LazyColumn(
+                state = searchListState,
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().rotaryGeneric(searchListState),
             ) {
                 item { ListHeader2("播放全部") { onPlayAll(result.songs) } }
                 items(result.songs) { song ->

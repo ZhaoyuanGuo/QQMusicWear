@@ -52,6 +52,7 @@ import androidx.wear.compose.material3.TimeText
 import coil3.compose.AsyncImage
 import com.qmusic.wear.R
 import com.qmusic.wear.ServiceLocator
+import com.qmusic.wear.ui.components.rotaryList
 import com.qmusic.wear.ui.mine.MineOverlay
 
 /**
@@ -110,7 +111,7 @@ fun HomeScreen(
                     ),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().rotaryList(listState),
                 ) {
                     // ---- 大卡 1：每日30首 ----
                     item {

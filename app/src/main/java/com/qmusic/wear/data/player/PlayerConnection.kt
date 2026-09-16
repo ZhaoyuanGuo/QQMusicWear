@@ -127,7 +127,11 @@ class PlayerConnection(
                 super.onMediaItemTransition(mediaItem, reason)
                 val song = currentQueue.getOrNull(c.currentMediaItemIndex)
                 if (song != null) {
-                    scope.launch(Dispatchers.IO) { historyStore.record(song) }
+                    scope.launch(Dispatchers.IO) {
+                        historyStore.record(song)
+                        // 听歌统计（周时长/Top歌曲），失败不影响播放
+                        runCatching { ServiceLocator.playStats.record(song) }
+                    }
                 }
                 publish(c)
             }
@@ -184,6 +188,57 @@ class PlayerConnection(
     fun playAt(index: Int) {
         controller?.seekTo(index, 0)
         controller?.play()
+    }
+
+    /**
+     * 点播加入队列：点击任意列表里的一首歌 = 追加到当前队列尾部并立即播放该曲。
+     * 队列中其余歌曲保持不动；若该曲已在队列里则直接跳过去播放（避免重复入列）。
+     * 已下载歌曲直接用本地文件，未下载按当前音质解析。
+     */
+    fun enqueueAndPlay(song: Song) {
+        if (song.mid.isEmpty()) return
+        scope.launch {
+            // 队列里已有该曲目：不追加，直接跳转播放（队列不发生变动）
+            val existIdx = currentQueue.indexOfFirst { it.mid == song.mid }
+            if (existIdx >= 0) {
+                mainExecutor.execute {
+                    controller?.seekTo(existIdx, 0)
+                    controller?.prepare()
+                    controller?.play()
+                }
+                return@launch
+            }
+            val resolved = ServiceLocator.downloads.findByMid(song.mid)?.let { d ->
+                ResolvedUrl(
+                    url = java.io.File(d.filePath).toURI().toString(),
+                    prefix = "LOCAL",
+                )
+            } ?: run {
+                val quality = ServiceLocator.settingsStore.quality()
+                ServiceLocator.repository.resolveUrls(listOf(song), quality).firstOrNull()
+            }
+            if (resolved == null) {
+                val dbg = ServiceLocator.repository.lastResolveDebug
+                mainExecutor.execute {
+                    android.widget.Toast.makeText(
+                        context,
+                        "无法获取播放地址（网络或版权限制）" + if (dbg.isNotEmpty()) "\n$dbg" else "",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+                return@launch
+            }
+            mainExecutor.execute {
+                val c = controller ?: return@execute
+                currentQueue = currentQueue + song
+                currentUrls = currentUrls + resolved
+                val target = currentQueue.lastIndex
+                c.addMediaItem(song.toMediaItem(resolved))
+                c.seekTo(target, 0)
+                c.prepare()
+                c.play()
+            }
+        }
     }
 
     /** 从队列移除指定曲目（正在播放的不可移除） */

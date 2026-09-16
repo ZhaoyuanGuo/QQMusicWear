@@ -50,6 +50,7 @@ import com.qmusic.wear.ui.components.RoundCover
 import com.qmusic.wear.ui.components.SectionHeader
 import com.qmusic.wear.ui.components.SongRow
 import com.qmusic.wear.ui.components.SquareCover
+import com.qmusic.wear.ui.components.rotaryList
 import kotlinx.coroutines.launch
 
 /**
@@ -85,7 +86,7 @@ fun RankScreen(
             ),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().rotaryList(listState),
         ) {
             item { PageTitle("排行榜") }
 
@@ -173,7 +174,7 @@ fun ToplistScreen(
             ),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().rotaryList(listState),
         ) {
             item {
                 PageTitle(title)
@@ -209,7 +210,8 @@ fun ToplistScreen(
                         liked = likedMids.contains(song.mid),
                         downloaded = downloadedSet.any { it.song.mid == song.mid },
                         onClick = {
-                            ServiceLocator.player.playFromList(songs, song.mid)
+                            // 点播加入队列：追加到当前队列尾部并播放该曲（其余歌曲不动）
+                            ServiceLocator.player.enqueueAndPlay(song)
                             onOpenPlayer()
                         },
                         onLongClick = {
@@ -256,7 +258,7 @@ fun SquareScreen(
             ),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().rotaryList(listState),
         ) {
             item { PageTitle("歌单广场") }
 
