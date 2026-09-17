@@ -36,9 +36,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -106,6 +109,18 @@ fun MineOverlay(
             vm.onQueryChange(text)
         }
     }
+    val launchVoice: () -> Unit = {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "说出要搜索的歌曲、歌手或歌单")
+        }
+        // 设备无语音识别组件时静默忽略
+        runCatching { voiceLauncher.launch(intent) }
+    }
+    // 输入态标记：区分"正在打字"与"点历史词/语音结果"，用于切到结果页时恢复焦点与键盘
+    var typing by remember { mutableStateOf(false) }
+    val fieldFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
 
     Box(
         Modifier
@@ -144,92 +159,18 @@ fun MineOverlay(
             PageTitle("我的")
             Spacer(Modifier.height(8.dp))
 
-            // ---------- 顶部搜索栏 ----------
-            BasicTextField(
-                value = search.query,
-                onValueChange = vm::onQueryChange,
-                singleLine = true,
-                textStyle = TextStyle(
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = MaterialTheme.typography.bodyMedium.fontSize,
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f))
-                    .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(50))
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                decorationBox = { inner ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_search),
-                            contentDescription = "搜索",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(Modifier.size(8.dp))
-                        if (search.query.isEmpty()) {
-                            Text(
-                                "搜索歌曲 / 歌手 / 歌单",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        // 文本编辑区占剩余宽度，麦克风固定在右侧
-                        Box(Modifier.weight(1f)) { inner() }
-                        // 语音搜索：命中区扩到32dp（图标视觉16dp不变）
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .clickable {
-                                    val intent =
-                                        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                            putExtra(
-                                                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
-                                            )
-                                            putExtra(
-                                                RecognizerIntent.EXTRA_PROMPT,
-                                                "说出要搜索的歌曲、歌手或歌单",
-                                            )
-                                        }
-                                    // 设备无语音识别组件时静默忽略
-                                    runCatching { voiceLauncher.launch(intent) }
-                                },
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_mic),
-                                contentDescription = "语音搜索",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp),
-                            )
-                        }
-                    }
-                },
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            // 搜索历史（空查询时显示，点词直接搜）
-            if (search.query.isBlank() && history.isNotEmpty()) {
-                SearchHistoryRow(
-                    history = history,
-                    onPick = { vm.onQueryChange(it) },
-                    onClear = { ServiceLocator.searchHistory.clear() },
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-
             when {
-                // weight(1f) 给 MineTabs 列表有界高度（LazyColumn 需受限约束），并为底部按钮留出空间
+                // 主列表：搜索栏与搜索历史放进列表，随内容滚动（往下滑即跟随上移，不再悬浮）
                 search.query.isBlank() -> Box(Modifier.weight(1f)) {
                     MineTabs(
                         ui = ui,
                         recentCount = recent.size,
                         sessionBad = sessionBad,
+                        query = search.query,
+                        onQueryChange = { typing = true; vm.onQueryChange(it) },
+                        onVoiceSearch = launchVoice,
+                        history = history,
+                        onPickHistory = { typing = false; vm.onQueryChange(it) },
                         onOpenLiked = { liked -> onOpenPlaylist(liked.disstid, liked.name) },
                         onOpenRecent = onOpenRecent,
                         onOpenPlaylist = onOpenPlaylist,
@@ -238,42 +179,151 @@ fun MineOverlay(
                     )
                 }
 
-                search.searching -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                search.searching -> Box(Modifier.weight(1f)) {
+                    Column(Modifier.fillMaxSize()) {
+                        // 结果页搜索栏固定顶部，便于修改关键词
+                        MineSearchField(
+                            query = search.query,
+                            onQueryChange = { typing = true; vm.onQueryChange(it) },
+                            onVoiceSearch = launchVoice,
+                            modifier = Modifier.focusRequester(fieldFocus),
+                        )
+                        LaunchedEffect(Unit) {
+                            // 从主列表打字切换过来时恢复焦点与键盘（搜索栏换了挂载点）
+                            if (typing) {
+                                fieldFocus.requestFocus()
+                                keyboard?.show()
+                                typing = false
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    }
                 }
 
-                else -> SearchResults(
-                    result = search.result ?: SearchResult(),
-                    onPlaySong = { song ->
-                        // 点播加入队列：追加到当前队列尾部并播放该曲（其余歌曲不动）
-                        ServiceLocator.player.enqueueAndPlay(song)
-                        onDismiss()
-                        onOpenPlayer()
-                    },
-                    onPlayAll = { songs ->
-                        if (songs.isNotEmpty()) {
-                            vm.playFrom(songs, songs.first().mid)
-                            onDismiss()
-                            onOpenPlayer()
+                else -> Box(Modifier.weight(1f)) {
+                    Column(Modifier.fillMaxSize()) {
+                        MineSearchField(
+                            query = search.query,
+                            onQueryChange = { typing = true; vm.onQueryChange(it) },
+                            onVoiceSearch = launchVoice,
+                            modifier = Modifier.focusRequester(fieldFocus),
+                        )
+                        LaunchedEffect(Unit) {
+                            if (typing) {
+                                fieldFocus.requestFocus()
+                                keyboard?.show()
+                                typing = false
+                            }
                         }
-                    },
-                    onSearchSinger = { name -> vm.onQueryChange(name) },
-                    onOpenPlaylist = { pl ->
-                        onDismiss()
-                        onOpenPlaylist(pl.disstid, pl.name)
-                    },
-                )
+                        Spacer(Modifier.height(10.dp))
+                        SearchResults(
+                            result = search.result ?: SearchResult(),
+                            onPlaySong = { song ->
+                                // 点播加入队列：追加到当前队列尾部并播放该曲（其余歌曲不动）
+                                ServiceLocator.player.enqueueAndPlay(song)
+                                onDismiss()
+                                onOpenPlayer()
+                            },
+                            onPlayAll = { songs ->
+                                if (songs.isNotEmpty()) {
+                                    vm.playFrom(songs, songs.first().mid)
+                                    onDismiss()
+                                    onOpenPlayer()
+                                }
+                            },
+                            onSearchSinger = { name -> vm.onQueryChange(name) },
+                            onOpenPlaylist = { pl ->
+                                onDismiss()
+                                onOpenPlaylist(pl.disstid, pl.name)
+                            },
+                        )
+                    }
+                }
             }
         }
     }
 }
 
-/** 「我的」页主体：异常提示 → 我的喜欢 → 最近播放 → 我的歌单 → 下载管理 → 设置 */
+/**
+ * 搜索栏（歌曲/歌手/歌单）+ 右侧语音入口：
+ * 麦克风加大为深色圆底按钮（此前灰色裸图标过小、难以发现和点中）。
+ */
+@Composable
+private fun MineSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onVoiceSearch: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BasicTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        textStyle = TextStyle(
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = MaterialTheme.typography.bodyMedium.fontSize,
+        ),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f))
+            .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(50))
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        decorationBox = { inner ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_search),
+                    contentDescription = "搜索",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.size(8.dp))
+                if (query.isEmpty()) {
+                    Text(
+                        "搜索歌曲 / 歌手 / 歌单",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // 文本编辑区占剩余宽度，麦克风固定在右侧
+                Box(Modifier.weight(1f)) { inner() }
+                // 语音搜索：34dp 深色圆底 + 18dp 图标（命中区与视觉一致）
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.40f))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.16f), CircleShape)
+                        .clickable(onClick = onVoiceSearch),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_mic),
+                        contentDescription = "语音搜索",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        },
+    )
+}
+
+/** 「我的」页主体：搜索栏/历史 → 异常提示 → 我的喜欢 → 最近播放 → 我的歌单 → 下载管理 → 设置 */
 @Composable
 private fun MineTabs(
     ui: MineUiState,
     recentCount: Int,
     sessionBad: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onVoiceSearch: () -> Unit,
+    history: List<String>,
+    onPickHistory: (String) -> Unit,
     onOpenLiked: (Playlist) -> Unit,
     onOpenRecent: () -> Unit,
     onOpenPlaylist: (Long, String) -> Unit,
@@ -292,6 +342,19 @@ private fun MineTabs(
         verticalArrangement = Arrangement.spacedBy(6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // 搜索栏/搜索历史随列表滚动：往下滑即跟随上移，不再悬浮占位
+        item {
+            MineSearchField(query = query, onQueryChange = onQueryChange, onVoiceSearch = onVoiceSearch)
+        }
+        if (history.isNotEmpty()) {
+            item {
+                SearchHistoryRow(
+                    history = history,
+                    onPick = onPickHistory,
+                    onClear = { ServiceLocator.searchHistory.clear() },
+                )
+            }
+        }
         // 登录状态异常：凭据过期或接口全部拉取失败
         if (sessionBad) {
             item {

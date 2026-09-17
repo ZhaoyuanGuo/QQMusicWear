@@ -55,11 +55,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -77,7 +79,6 @@ import androidx.wear.compose.material3.RadioButton
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Slider
 import androidx.wear.compose.material3.Text
-import androidx.wear.compose.material3.TimeText
 import coil3.compose.AsyncImage
 import com.qmusic.wear.R
 import com.qmusic.wear.ServiceLocator
@@ -120,19 +121,18 @@ fun PlayerScreen(
     LaunchedEffect(volFlashTick) {
         if (volFlashTick > 0) {
             volFlashVisible = true
-            delay(900)
+            delay(1600)
             volFlashVisible = false
         }
     }
 
     // 表冠旋转调音量：自定义 ScrollableState，累计增量每 40px 触发一档音量步进
+    // （播放页上表冠始终调音量，弧形指示随音量变化出现并自动消失）
     val volAcc = remember { mutableFloatStateOf(0f) }
     val volScrollState = remember {
         object : ScrollableState {
             override val isScrollInProgress: Boolean get() = false
             override fun dispatchRawDelta(delta: Float): Float {
-                // 仅在音量面板打开时表冠才调音量，防止误触
-                if (!ui.showVolume) return 0f
                 volAcc.floatValue += delta
                 var consumed = 0f
                 while (abs(volAcc.floatValue) >= 40f) {
@@ -172,21 +172,28 @@ fun PlayerScreen(
             scrim = if (isAmbient) 0.72f else 0.55f,
         )
 
-        // 环绕屏幕边界的播放进度（保留我们自己的环形进度条，不受内容边距影响）
+        // 环绕屏幕边界的播放进度；音量调节时临时变为音量弧（同款样式），播放进度隐藏
         EdgeProgressRing(
-            progress = progress,
+            progress = if (volFlashVisible && ui.maxVolume > 0) {
+                ui.volume.toFloat() / ui.maxVolume
+            } else {
+                progress
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(5.dp),
         )
 
         ScreenScaffold(
-            timeText = { TimeText() },
-        ) { contentPadding ->
+            // 播放页不显示系统时间：顶部缺口两侧改放当前/总时长
+            timeText = {},
+        ) { _ ->
+            // 注意：不应用 contentPadding——圆屏内缩会把内容区压到 ~340×284，
+            // 导致圆盘缩小、控制行溢出（下一曲键被压缩至零宽消失）、底部钮行悬空。
+            // 播放页是全屏沉浸布局（背景/进度环本就在 padding 外），按物理屏幕约束排布。
             Box(
                 Modifier
                     .fillMaxSize()
-                    .padding(contentPadding)
                     .rotaryGeneric(volScrollState)
                     .pointerInput(Unit) {
                         detectHorizontalDragGestures(
@@ -240,13 +247,6 @@ fun PlayerScreen(
                         )
                     }
 
-                    ui.showVolume -> Box(
-                        Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        VolumeSection(ui = ui, vm = vm)
-                    }
-
                     now.song == null -> Box(
                         Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center,
@@ -262,43 +262,74 @@ fun PlayerScreen(
                         }
                     }
 
-                    else -> PlayerContent(
-                        now = now,
-                        vm = vm,
-                        onOpenDownloads = onOpenDownloads,
-                    )
+                else -> PlayerContent(
+                    now = now,
+                    vm = vm,
+                    onOpenDownloads = onOpenDownloads,
+                    onVolumeAdjust = { volFlashTick++ },
+                )
                 }
             }
         }
 
-        // 表冠音量临时指示：玻璃小胶囊，约1秒自动消失
+        // 顶部进度环缺口正中：单行时间 0:07 / 4:29（替代系统时间，AOD 自动降亮度）
+        if (now.song != null) {
+            val topAlpha = if (isAmbient) 0.45f else 1f
+            Text(
+                text = "${formatMs(now.positionMs)} / ${formatMs(now.durationMs)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.72f * topAlpha),
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 6.dp)
+                    .fillMaxWidth(),
+            )
+        }
+
+        // 音量指示（表冠旋转或点音量键触发，约1.6秒自动消失）：
+        // 底部小胶囊显示音量值并提供触控加减，播放进度环同时切换为音量弧
         AnimatedVisibility(
-            visible = volFlashVisible && !ui.showVolume,
+            visible = volFlashVisible,
             enter = fadeIn() + scaleIn(initialScale = 0.85f),
             exit = fadeOut() + scaleOut(targetScale = 0.85f),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 64.dp),
+                .padding(bottom = 44.dp),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f))
-                    .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(50))
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_volume),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(13.dp),
-                )
-                Text(
-                    text = "音量 ${ui.volume}/${ui.maxVolume}",
-                    style = MaterialTheme.typography.labelMedium,
-                )
+                VolumeStepButton("−") {
+                    vm.setVolume((ui.volume - 1).coerceIn(0, ui.maxVolume))
+                    volFlashTick++
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(50))
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_volume),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(13.dp),
+                    )
+                    Text(
+                        text = "音量 ${ui.volume}/${ui.maxVolume}",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                VolumeStepButton("+") {
+                    vm.setVolume((ui.volume + 1).coerceIn(0, ui.maxVolume))
+                    volFlashTick++
+                }
             }
         }
     }
@@ -309,11 +340,12 @@ private fun PlayerContent(
     now: com.qmusic.wear.data.player.NowPlaying,
     vm: PlayerViewModel,
     onOpenDownloads: () -> Unit,
+    onVolumeAdjust: () -> Unit,
 ) {
     val isAmbient = LocalIsAmbient.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        // ---- 中央大圆盘（磁音同款）：封面填充，占短边 86%，与屏幕/进度环同心（不超环） ----
-        val disc = minOf(maxWidth, maxHeight) * 0.86f
+        // ---- 中央大圆盘：封面填充，占短边 76%（1.9.1 比例，给底部控件行留出空间） ----
+        val disc = minOf(maxWidth, maxHeight) * 0.76f
         val coverTint = rememberCoverColor(now.song?.cover500.orEmpty())
 
         // 播放时封面缓慢旋转（约30秒/圈），暂停即停并轻微变暗；AOD 下静止
@@ -369,18 +401,20 @@ private fun PlayerContent(
                     .background(
                         Brush.verticalGradient(
                             listOf(
-                                Color.Black.copy(alpha = if (isAmbient) 0.55f else 0.45f),
+                                Color.Black.copy(alpha = if (isAmbient) 0.62f else 0.55f),
                                 Color.Transparent,
                             ),
                         ),
                     ),
             )
 
-            // 控制键组：精确位于盘心——圆心处横向弦最宽，小圆屏也不会裁掉两侧切歌键
+            // 控制键组：盘心略下移，与上方歌名/歌手拉开间距
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.align(Alignment.Center),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(y = 10.dp),
             ) {
                 QmIconButton(
                     resId = R.drawable.ic_qm_prev,
@@ -397,16 +431,23 @@ private fun PlayerContent(
                 )
             }
 
-            // 歌名/歌手：盘内上部（避开盘心控件组）
+            // 歌名/歌手：盘内上部（上移让位给控制键组，避免播放键顶到歌手名）
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = disc * 0.15f),
+                    .padding(top = disc * 0.12f),
             ) {
                 Text(
                     text = now.song?.name.orEmpty(),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        // 文字阴影：亮色封面上保证白字分离度
+                        shadow = Shadow(
+                            color = Color.Black.copy(alpha = 0.55f),
+                            blurRadius = 10f,
+                            offset = Offset.Zero,
+                        ),
+                    ),
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
                     textAlign = TextAlign.Center,
@@ -426,27 +467,30 @@ private fun PlayerContent(
             }
         }
 
-        // ---- 底部副控件行（磁音：播放页下方一排小圆钮），播放模式入口已移至队列页 ----
+        // ---- 底部副控件行：横排贴底（间距/尺寸经实机验证不被圆屏裁切） ----
         SubControlsRow(
             now = now,
             vm = vm,
             onOpenDownloads = onOpenDownloads,
+            onVolumeAdjust = onVolumeAdjust,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 16.dp),
+                .padding(bottom = 8.dp),
         )
     }
 }
 
 /**
  * 底部副控件行：音量 / 喜欢 / 音质 / 下载 四个小圆钮横排。
- * 播放模式切换入口移至队列页头部（磁音同款），歌词入口仅为左右滑手势。
+ * 视觉圆底 28dp、间距 12dp；命中区保持 42dp——用 -2dp 行距抵消命中区外扩，
+ * 视觉效果与 1.9.1 完全一致（28dp 圆 + 12dp 视觉间隙），触控容错不减。
  */
 @Composable
 private fun SubControlsRow(
     now: com.qmusic.wear.data.player.NowPlaying,
     vm: PlayerViewModel,
     onOpenDownloads: () -> Unit,
+    onVolumeAdjust: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -459,86 +503,98 @@ private fun SubControlsRow(
     val liked = curSong != null && likedMids.contains(curSong.mid)
     val downloaded = curSong?.let { s -> downloads.any { it.song.mid == s.mid } } == true
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        // 命中区扩到42dp后缩小间距，视觉节奏接近原样
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = modifier,
-    ) {
-        SubControlChip(
-            resId = R.drawable.ic_volume,
-            contentDescription = stringResource(R.string.player_volume),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            onClick = { vm.toggleVolume() },
-        )
-        // 红心收藏：单击加入/移出「我喜欢」（与手机端账号联动）
-        SubControlChip(
-            resId = R.drawable.ic_heart,
-            contentDescription = if (liked) "取消喜欢" else "加入我喜欢",
-            tint = if (liked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            onClick = {
-                if (curSong != null) {
-                    scope.launch {
-                        val ok = ServiceLocator.repository.setLiked(curSong, !liked)
-                        android.widget.Toast.makeText(
-                            ctx,
-                            if (!ok) "收藏失败（需登录）" else if (!liked) "已加入我喜欢" else "已取消喜欢",
-                            android.widget.Toast.LENGTH_SHORT,
-                        ).show()
+    // 四个钮（顺序：左 → 右）
+    val chips: List<@Composable () -> Unit> = listOf(
+        {
+            SubControlChip(
+                resId = R.drawable.ic_volume,
+                contentDescription = stringResource(R.string.player_volume),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                onClick = onVolumeAdjust,
+            )
+        },
+        {
+            // 红心收藏：单击加入/移出「我喜欢」（与手机端账号联动）
+            SubControlChip(
+                resId = R.drawable.ic_heart,
+                contentDescription = if (liked) "取消喜欢" else "加入我喜欢",
+                tint = if (liked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                onClick = {
+                    if (curSong != null) {
+                        scope.launch {
+                            val ok = ServiceLocator.repository.setLiked(curSong, !liked)
+                            android.widget.Toast.makeText(
+                                ctx,
+                                if (!ok) "收藏失败（需登录）" else if (!liked) "已加入我喜欢" else "已取消喜欢",
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        }
                     }
+                },
+            )
+        },
+        {
+            SubControlChip(
+                resId = R.drawable.ic_quality,
+                contentDescription = stringResource(R.string.player_quality),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                // 角标显示当前音质，不点开也能看到（HQ/SQ/HR/128）
+                badge = when (uiState.selectedQuality) {
+                    Quality.STANDARD -> "128"
+                    Quality.HIGH -> "HQ"
+                    Quality.LOSSLESS -> "SQ"
+                    Quality.HI_RES -> "HR"
+                },
+                onClick = { vm.toggleQuality() },
+            )
+        },
+        {
+            // 下载控件：空闲=下载图标 / 下载中=进度环 / 完成=对勾
+            when {
+                download.running -> Box(
+                    contentAlignment = Alignment.Center,
+                    // 与其余按钮的42dp命中区对齐，避免状态切换时行内抖动
+                    modifier = Modifier.size(42.dp),
+                ) {
+                    CircularProgressIndicator(
+                        progress = { download.progress },
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
                 }
-            },
-        )
-        SubControlChip(
-            resId = R.drawable.ic_quality,
-            contentDescription = stringResource(R.string.player_quality),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            // 角标显示当前音质，不点开也能看到（HQ/SQ/HR/128）
-            badge = when (uiState.selectedQuality) {
-                Quality.STANDARD -> "128"
-                Quality.HIGH -> "HQ"
-                Quality.LOSSLESS -> "SQ"
-                Quality.HI_RES -> "HR"
-            },
-            onClick = { vm.toggleQuality() },
-        )
-        // 下载控件：空闲=下载图标 / 下载中=进度环 / 完成=对勾
-        when {
-            download.running -> Box(
-                contentAlignment = Alignment.Center,
-                // 与其余按钮的42dp命中区对齐，避免状态切换时行内抖动
-                modifier = Modifier.size(42.dp),
-            ) {
-                CircularProgressIndicator(
-                    progress = { download.progress },
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
+                download.done || downloaded -> SubControlChip(
+                    resId = R.drawable.ic_check,
+                    contentDescription = "已下载（点击查看，长按删除）",
+                    tint = MaterialTheme.colorScheme.primary,
+                    onClick = onOpenDownloads,
+                    onLongClick = {
+                        if (curSong != null) ServiceLocator.downloads.remove(curSong.mid)
+                    },
+                )
+                else -> SubControlChip(
+                    resId = R.drawable.ic_download,
+                    contentDescription = stringResource(R.string.player_download),
+                    tint = if (download.message.isNotEmpty()) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    onClick = { vm.downloadCurrent() },
                 )
             }
-            download.done || downloaded -> SubControlChip(
-                resId = R.drawable.ic_check,
-                contentDescription = "已下载（点击查看，长按删除）",
-                tint = MaterialTheme.colorScheme.primary,
-                onClick = onOpenDownloads,
-                onLongClick = {
-                    if (curSong != null) ServiceLocator.downloads.remove(curSong.mid)
-                },
-            )
-            else -> SubControlChip(
-                resId = R.drawable.ic_download,
-                contentDescription = stringResource(R.string.player_download),
-                tint = if (download.message.isNotEmpty()) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                onClick = { vm.downloadCurrent() },
-            )
-        }
+        },
+    )
+    // 命中区42dp + 行距-2dp → 视觉圆底中心距 40dp（= 28dp 圆 + 12dp 间隙，与 1.9.1 一致）
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy((-2).dp),
+        modifier = modifier,
+    ) {
+        chips.forEach { chip -> chip() }
     }
 }
 
-/** 裸图标按钮（磁音样式：半透明白色圆底 + 白色图标）；命中区扩到42dp提升手指容错 */
+/** 裸图标按钮（深色圆底 + 白色图标）；命中区扩到42dp提升手指容错 */
 @Composable
 private fun QmIconButton(
     resId: Int,
@@ -561,7 +617,9 @@ private fun QmIconButton(
             modifier = Modifier
                 .size(iconSize + 16.dp)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.16f)),
+                // 深色圆底：亮色封面上依然清晰（白色半透明底会被亮背景吞掉）
+                .background(Color.Black.copy(alpha = 0.40f))
+                .border(0.5.dp, Color.White.copy(alpha = 0.16f), CircleShape),
         ) {
             Icon(
                 painter = painterResource(resId),
@@ -602,6 +660,12 @@ private fun QmPlayPauseButton(playing: Boolean, isAmbient: Boolean) {
             scaleY = scale
         },
     ) {
+        // 深色底盘：亮色封面上给品牌绿键提供分离度
+        Box(
+            Modifier
+                .size(60.dp)
+                .background(Color.Black.copy(alpha = 0.35f), CircleShape),
+        )
         // 外圈光晕
         Box(
             Modifier
@@ -700,8 +764,9 @@ private fun SubControlChip(
             modifier = Modifier
                 .size(28.dp)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.09f))
-                .border(0.5.dp, Color.White.copy(alpha = 0.14f), CircleShape),
+                // 深色圆底：任何封面色上都清晰
+                .background(Color.Black.copy(alpha = 0.42f))
+                .border(0.5.dp, Color.White.copy(alpha = 0.18f), CircleShape),
         ) {
             Icon(
                 painter = painterResource(resId),
@@ -727,33 +792,28 @@ private fun SubControlChip(
     }
 }
 
-/** 音量面板（半透明卡片） */
+/** 音量加减小圆钮（音量指示胶囊两侧的触控 +/−） */
 @Composable
-private fun VolumeSection(ui: PlayerUiState, vm: PlayerViewModel) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+private fun VolumeStepButton(symbol: String, onClick: () -> Unit) {
+    val haptics = rememberHaptics()
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = Modifier
-            .padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.86f))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.42f))
+            .border(0.5.dp, Color.White.copy(alpha = 0.16f), CircleShape)
+            .clickable {
+                haptics.tap()
+                onClick()
+            },
     ) {
-        Icon(painterResource(R.drawable.ic_volume), null, tint = MaterialTheme.colorScheme.primary)
-        Slider(
-            value = ui.volume,
-            onValueChange = { vm.setVolume(it) },
-            valueProgression = 0..ui.maxVolume,
-            modifier = Modifier.fillMaxWidth(),
-        )
         Text(
-            text = "音量 ${ui.volume}/${ui.maxVolume}",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = symbol,
+            color = Color.White,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
         )
-        androidx.wear.compose.material3.Button(onClick = { vm.toggleVolume() }) {
-            Text("完成")
-        }
     }
 }
 
@@ -806,4 +866,11 @@ private fun QualityPicker(
         }
         Spacer(Modifier.height(6.dp))
     }
+}
+
+/** 毫秒 → m:ss（顶部进度时间用） */
+private fun formatMs(ms: Long): String {
+    if (ms <= 0L) return "0:00"
+    val totalSec = ms / 1000L
+    return "${totalSec / 60}:${(totalSec % 60).toString().padStart(2, '0')}"
 }

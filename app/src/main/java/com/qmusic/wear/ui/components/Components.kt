@@ -41,6 +41,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -66,6 +68,7 @@ import com.qmusic.wear.data.model.Song
  * 高斯模糊封面背景：播放页 / 歌词页共用。
  * 封面按 Crop 裁切铺满整屏（圆屏设备自动被屏幕轮廓裁圆），
  * 叠加圆屏径向暗角 + 纵向压暗渐变保证前景可读；无封面时用品牌渐变兜底。
+ * 亮色封面（如高亮黄/白专辑图）自动降饱和并加强压暗，避免整页被背景带偏。
  */
 @Composable
 fun BlurCoverBackground(
@@ -74,6 +77,10 @@ fun BlurCoverBackground(
     blurRadius: Dp = 44.dp,
     scrim: Float = 0.55f,
 ) {
+    // 亮封面动态加压：平均亮度 > 0.55 时额外降饱和 + 提升 scrim（上限 0.76）
+    val coverLum = rememberCoverLuminance(coverUrl)
+    val isBright = (coverLum ?: 0f) > 0.55f
+    val effScrim = if (isBright) (scrim + 0.16f).coerceAtMost(0.76f) else scrim
     Box(modifier.fillMaxSize()) {
         // 兜底品牌渐变
         Box(
@@ -94,6 +101,11 @@ fun BlurCoverBackground(
                 model = coverUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                colorFilter = if (isBright) {
+                    ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0.55f) })
+                } else {
+                    null
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .blur(blurRadius),
@@ -106,7 +118,7 @@ fun BlurCoverBackground(
                         Brush.radialGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                Color.Black.copy(alpha = 0.30f),
+                                Color.Black.copy(alpha = if (isBright) 0.38f else 0.30f),
                             ),
                         ),
                     ),
@@ -119,9 +131,9 @@ fun BlurCoverBackground(
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color.Black.copy(alpha = scrim * 0.6f),
-                            Color.Black.copy(alpha = scrim),
-                            Color.Black.copy(alpha = scrim * 1.15f),
+                            Color.Black.copy(alpha = effScrim * 0.6f),
+                            Color.Black.copy(alpha = effScrim),
+                            Color.Black.copy(alpha = effScrim * 1.15f),
                         ),
                     ),
                 ),
@@ -468,62 +480,62 @@ fun PlaylistHeader(
                 CountChip("${songCount}首")
             }
         }
-        // 下载全部：小圆钮（卡片内右对齐，播放全部上方）；下载中圆钮内显示进度环
-        if (onDownloadAll != null && songCount > 0) {
-            Spacer(Modifier.height(6.dp))
-            Box(
-                contentAlignment = Alignment.CenterEnd,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f))
-                        .border(0.5.dp, Color.White.copy(alpha = 0.14f), CircleShape)
-                        .clickable(enabled = !downloadPending, onClick = onDownloadAll),
-                ) {
-                    if (downloadPending) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 1.5.dp,
-                        )
-                    } else {
+        // 播放全部 + 下载全部：一行并排（大胶囊 + 小圆钮），下载不再单独占一行
+        if ((onPlayAll != null || onDownloadAll != null) && songCount > 0) {
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onPlayAll != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(50))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+                            .clickable(onClick = onPlayAll)
+                            .padding(vertical = 7.dp),
+                    ) {
                         Icon(
-                            painter = painterResource(R.drawable.ic_download),
-                            contentDescription = "下载全部",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(12.dp),
+                            painter = painterResource(R.drawable.ic_play),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(13.dp),
+                        )
+                        Spacer(Modifier.size(4.dp))
+                        Text(
+                            "播放全部",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
-            }
-        }
-        if (onPlayAll != null && songCount > 0) {
-            Spacer(Modifier.height(8.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
-                    .clickable(onClick = onPlayAll)
-                    .padding(vertical = 7.dp),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_play),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(13.dp),
-                )
-                Spacer(Modifier.size(4.dp))
-                Text(
-                    "播放全部",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
+                if (onDownloadAll != null) {
+                    Spacer(Modifier.size(6.dp))
+                    // 下载全部小圆钮；下载中圆钮内显示进度环
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f))
+                            .border(0.5.dp, Color.White.copy(alpha = 0.14f), CircleShape)
+                            .clickable(enabled = !downloadPending, onClick = onDownloadAll),
+                    ) {
+                        if (downloadPending) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 1.5.dp,
+                            )
+                        } else {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_download),
+                                contentDescription = "下载全部",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
     }

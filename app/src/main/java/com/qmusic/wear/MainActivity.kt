@@ -339,8 +339,9 @@ private fun AppRoot() {
         }
         }
 
-        // ---- 实况胶囊：全局悬浮常驻屏幕底部（协议页/播放页除外），点击进播放页 ----
-        if (now.song != null && screen != Screen.Player) {
+        // ---- 实况胶囊：全局悬浮常驻屏幕底部（协议页/播放页/歌词页除外），点击进播放页 ----
+        // 歌词页不显示：胶囊会压住底部歌词行，且歌名/进播放页功能与页面自身内容重复
+        if (now.song != null && screen != Screen.Player && screen != Screen.Lyrics) {
             LiveCapsule(
                 coverUrl = now.song?.cover300.orEmpty(),
                 songName = now.song?.name.orEmpty(),

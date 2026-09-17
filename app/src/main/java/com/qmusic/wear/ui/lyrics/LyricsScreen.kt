@@ -197,20 +197,29 @@ fun LyricsScreen(
                         }
                     }
 
-                    // 顶部/底部黑色渐隐边缘：歌词滚入滚出时柔和消失（背景本身为深色 scrim，黑渐变协调）
+                    // 顶部/底部渐隐边缘：半透明峰值 + 渐变拉长，文字"隐入背景"而非隐入黑条
+                    // （纯黑不透明在暖色/亮色封面上会形成明显黑带，峰值需与背景自身压暗程度衔接）
                     Box(
                         Modifier
                             .align(Alignment.TopCenter)
                             .fillMaxWidth()
-                            .height(50.dp)
-                            .background(Brush.verticalGradient(listOf(Color.Black, Color.Transparent))),
+                            .height(64.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent),
+                                ),
+                            ),
                     )
                     Box(
                         Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
-                            .height(50.dp)
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black))),
+                            .height(64.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)),
+                                ),
+                            ),
                     )
                 }
             }

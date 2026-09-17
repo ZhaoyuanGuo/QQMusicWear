@@ -12,8 +12,8 @@ android {
         applicationId = "com.qmusic.wear"
         minSdk = 33
         targetSdk = 36
-        versionCode = 33
-        versionName = "1.9.5"
+        versionCode = 34
+        versionName = "1.9.6"
     }
 
     buildTypes {

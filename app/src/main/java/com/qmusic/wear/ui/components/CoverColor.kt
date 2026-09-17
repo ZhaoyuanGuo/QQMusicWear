@@ -23,6 +23,7 @@ import coil3.request.allowHardware
  */
 object CoverColors {
     private val cache = LruCache<String, Int>(64)
+    private val lumCache = LruCache<String, Float>(64)
 
     /** 取封面主色；加载或提取失败返回 null（调用方回退中性色） */
     suspend fun get(context: Context, url: String): Color? {
@@ -39,6 +40,35 @@ object CoverColors {
             val rgb = dominantRgb(bmp) ?: return@runCatching null
             cache.put(url, rgb)
             Color(rgb)
+        }.getOrNull()
+    }
+
+    /** 取封面平均亮度（0~1，Rec.709 加权）；加载或失败返回 null */
+    suspend fun luminance(context: Context, url: String): Float? {
+        if (url.isEmpty()) return null
+        lumCache.get(url)?.let { return it }
+        return runCatching {
+            val request = ImageRequest.Builder(context)
+                .data(url)
+                .size(32, 32)
+                .allowHardware(false)
+                .build()
+            val result = context.imageLoader.execute(request)
+            val bmp = (result.image as? BitmapImage)?.bitmap ?: return@runCatching null
+            val w = bmp.width
+            val h = bmp.height
+            val pixels = IntArray(w * h)
+            bmp.getPixels(pixels, 0, w, 0, 0, w, h)
+            var sum = 0f
+            for (p in pixels) {
+                val r = (p shr 16 and 0xFF) / 255f
+                val g = (p shr 8 and 0xFF) / 255f
+                val b = (p and 0xFF) / 255f
+                sum += 0.2126f * r + 0.7152f * g + 0.0722f * b
+            }
+            val lum = sum / pixels.size
+            lumCache.put(url, lum)
+            lum
         }.getOrNull()
     }
 
@@ -77,4 +107,15 @@ fun rememberCoverColor(url: String): Color? {
         color = CoverColors.get(context, url)
     }
     return color
+}
+
+/** 组合层：异步提取封面平均亮度（0~1，未就绪返回 null），供背景动态加压 */
+@Composable
+fun rememberCoverLuminance(url: String): Float? {
+    val context = LocalContext.current
+    var lum by remember(url) { mutableStateOf<Float?>(null) }
+    LaunchedEffect(url) {
+        lum = CoverColors.luminance(context, url)
+    }
+    return lum
 }
