@@ -1,11 +1,14 @@
 package com.qmusic.wear.data.api
 
+import com.qmusic.wear.data.model.AlbumDetail
 import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.Quality
 import com.qmusic.wear.data.model.ResolvedUrl
 import com.qmusic.wear.data.model.SearchResult
 import com.qmusic.wear.data.model.Song
 import com.qmusic.wear.data.model.UserProfile
+import com.qmusic.wear.data.source.AlbumDetailDto
+import com.qmusic.wear.data.source.ArtistSongsDto
 import com.qmusic.wear.data.source.PlaylistDetailDto
 import com.qmusic.wear.data.source.PlaylistDto
 import com.qmusic.wear.data.source.PlaylistDtoRef
@@ -160,6 +163,31 @@ suspend fun QMusicApi.lyricTrans(songMid: String, songId: Long): String =
         String.serializer(),
         call("lyricTrans", args("mid" to songMid, "songId" to songId)),
     )
+
+/** 歌词罗马音（roma LRC；无罗马音或源版本过旧时返回空串） */
+suspend fun QMusicApi.lyricRoma(songMid: String, songId: Long): String =
+    SourceDtos.json.decodeFromString(
+        String.serializer(),
+        call("lyricRoma", args("mid" to songMid, "songId" to songId)),
+    )
+
+/** 歌手歌曲（分页）；第二个值为是否还有下一页 */
+suspend fun QMusicApi.artistSongs(singerMid: String, page: Int = 1, size: Int = 30): Pair<List<Song>, Boolean> {
+    val dto = SourceDtos.json.decodeFromString(
+        ArtistSongsDto.serializer(),
+        call("artistSongs", args("singerMid" to singerMid, "page" to page, "size" to size)),
+    )
+    return dto.songs.map { it.toModel() } to dto.hasMore
+}
+
+/** 专辑详情（专辑名、封面、曲目） */
+suspend fun QMusicApi.albumSongs(albumMid: String): AlbumDetail {
+    val dto = SourceDtos.json.decodeFromString(
+        AlbumDetailDto.serializer(),
+        call("albumSongs", args("albumMid" to albumMid)),
+    )
+    return AlbumDetail(name = dto.name, coverUrl = dto.coverUrl, songs = dto.songs.map { it.toModel() })
+}
 
 /** 加入/移出「我喜欢」 */
 suspend fun QMusicApi.setLike(songId: Long, like: Boolean): Boolean =

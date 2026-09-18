@@ -21,6 +21,10 @@
     <!-- 磁贴 -->
     <string name="tile_playing">正在播放</string>
 
+    <!-- 表盘 Complication / Ongoing Activity -->
+    <string name="complication_label">正在播放</string>
+    <string name="ongoing_channel_name">播放常驻卡片</string>
+
     <!-- 登录页 -->
     <string name="login_title">扫码登录</string>
     <string name="login_wait_scan">请用手机 QQ 音乐扫码</string>

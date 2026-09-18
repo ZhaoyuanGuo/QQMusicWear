@@ -6,6 +6,7 @@ import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.data.model.Quality
 import com.qmusic.wear.data.model.UserProfile
 import com.qmusic.wear.data.player.SleepTimer
+import com.qmusic.wear.util.formatBytes
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +24,12 @@ data class SettingsUiState(
     val showLogoutConfirm: Boolean = false,
     /** 开屏提示（启动 Toast）开关 */
     val launchToastEnabled: Boolean = true,
+    /** 播放页屏幕常亮（显示模式设置） */
+    val keepScreenOn: Boolean = false,
+    /** 低配置设备模式：关闭特效/削减动画，低端手表更流畅 */
+    val lowPerf: Boolean = false,
+    /** 缓存清理状态：null=空闲，""=清理中，非空=结果提示 */
+    val cacheClearMessage: String? = null,
     /** 日志提取状态：null=空闲，""=提取中，非空=结果提示 */
     val logExportMessage: String? = null,
     /** 音乐源版本 */
@@ -49,6 +56,8 @@ class SettingsViewModel : ViewModel() {
                 quality = ServiceLocator.settingsStore.quality(),
                 downloadQuality = ServiceLocator.settingsStore.downloadQuality(),
                 launchToastEnabled = ServiceLocator.settingsStore.launchToastFlow.value,
+                keepScreenOn = ServiceLocator.settingsStore.keepScreenOnFlow.value,
+                lowPerf = ServiceLocator.settingsStore.lowPerfFlow.value,
                 sourceVersion = com.qmusic.wear.data.source.SourceManager.currentVersion(),
             )
             val cred = ServiceLocator.credential.value
@@ -91,6 +100,39 @@ class SettingsViewModel : ViewModel() {
     fun setLaunchToast(enabled: Boolean) {
         _ui.value = _ui.value.copy(launchToastEnabled = enabled)
         ServiceLocator.settingsStore.setLaunchToast(enabled)
+    }
+
+    /** 屏幕常亮开关：播放/歌词页保持屏幕点亮 */
+    fun setKeepScreenOn(enabled: Boolean) {
+        _ui.value = _ui.value.copy(keepScreenOn = enabled)
+        ServiceLocator.settingsStore.setKeepScreenOn(enabled)
+    }
+
+    /** 低配置设备模式：关闭模糊背景/封面旋转/光晕/页面转场等重特效 */
+    fun setLowPerf(enabled: Boolean) {
+        _ui.value = _ui.value.copy(lowPerf = enabled)
+        ServiceLocator.settingsStore.setLowPerf(enabled)
+    }
+
+    /** 清理图片缓存（Coil 内存 + 磁盘），完成后提示释放空间 */
+    fun clearImageCache() {
+        if (_ui.value.cacheClearMessage == "") return
+        _ui.value = _ui.value.copy(cacheClearMessage = "")
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val freed = runCatching {
+                val ctx = ServiceLocator.appContextOrNull() ?: error("未初始化")
+                val loader = coil3.SingletonImageLoader.get(ctx)
+                val before = loader.diskCache?.size ?: 0L
+                loader.memoryCache?.clear()
+                loader.diskCache?.clear()
+                before
+            }.getOrDefault(0L)
+            _ui.value = _ui.value.copy(cacheClearMessage = "已释放 ${freed.formatBytes()} 图片缓存")
+        }
+    }
+
+    fun dismissCacheClear() {
+        _ui.value = _ui.value.copy(cacheClearMessage = null)
     }
 
     /** 提取日志：崩溃落盘 + 本进程 logcat 尾部，写出为文本文件并返回展示提示 */

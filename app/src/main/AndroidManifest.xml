@@ -59,6 +59,22 @@
                 <action android:name="androidx.wear.tiles.action.BIND_TILE_SERVICE" />
             </intent-filter>
         </service>
+
+        <!-- 「正在播放」表盘 Complication 数据源（SHORT_TEXT） -->
+        <service
+            android:name=".data.tile.PlayingComplicationService"
+            android:exported="true"
+            android:label="@string/complication_label">
+            <intent-filter>
+                <action android:name="androidx.wear.watchface.complications.datasource.ComplicationDataSourceService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="300" />
+        </service>
     </application>
 
 </manifest>

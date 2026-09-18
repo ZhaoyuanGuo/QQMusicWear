@@ -35,6 +35,13 @@ data class Singer(
     val name: String = "",
 )
 
+/** 专辑详情（专辑页） */
+data class AlbumDetail(
+    val name: String = "",
+    val coverUrl: String = "",
+    val songs: List<Song> = emptyList(),
+)
+
 /** 登录用户资料 */
 data class UserProfile(
     val musicid: Long = 0L,

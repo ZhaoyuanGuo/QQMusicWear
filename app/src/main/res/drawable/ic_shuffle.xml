@@ -32,4 +32,11 @@
         android:strokeColor="#FFFFFFFF"
         android:strokeWidth="1.5"
         android:strokeLineCap="round" />
+    <!-- 左上箭头头部（与右下箭头镜像对称） -->
+    <path
+        android:pathData="M3.5 8V3.5H8"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
 </vector>

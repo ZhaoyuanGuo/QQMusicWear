@@ -289,11 +289,15 @@ private fun QueueRow(
     }
 }
 
-/** 绿色播放动效条（磁音当前曲目行尾的三根跳动小条） */
+/** 绿色播放动效条（磁音当前曲目行尾的三根跳动小条）；低配置设备模式下静态显示 */
 @Composable
 private fun PlayingBars() {
     val tint = MaterialTheme.colorScheme.primary
-    val transition = rememberInfiniteTransition(label = "playing_bars")
+    val lowPerf = com.qmusic.wear.ui.theme.LocalLowPerf.current
+    val heights: List<Float> = if (lowPerf) {
+        listOf(0.6f, 1f, 0.8f)
+    } else {
+        val transition = rememberInfiniteTransition(label = "playing_bars")
     val h1 by transition.animateFloat(
         initialValue = 0.2f,
         targetValue = 1f,
@@ -312,7 +316,8 @@ private fun PlayingBars() {
         animationSpec = infiniteRepeatable(tween(520, delayMillis = 90), RepeatMode.Reverse),
         label = "bar3",
     )
-    val heights = listOf(h1, h2, h3)
+        listOf(h1, h2, h3)
+    }
     Row(
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(2.dp),

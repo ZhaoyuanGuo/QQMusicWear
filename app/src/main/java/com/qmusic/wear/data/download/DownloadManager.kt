@@ -57,6 +57,7 @@ class DownloadManager(context: Context, private val http: okhttp3.OkHttpClient) 
     val downloadsFlow: StateFlow<List<Downloaded>> = _downloadsFlow.asStateFlow()
 
     private val batchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val prefetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _batch = MutableStateFlow(BatchState())
     val batch: StateFlow<BatchState> = _batch.asStateFlow()
@@ -120,6 +121,8 @@ class DownloadManager(context: Context, private val http: okhttp3.OkHttpClient) 
                     downloadedAt = System.currentTimeMillis() / 1000,
                 )
                 upsert(record)
+                // 预取歌词（原文/译文/罗马音）落盘：后台进行，不阻塞下载返回，失败不影响下载结果
+                prefetchLyrics(song)
                 record
             } finally {
                 runCatching { if (tmp.exists()) tmp.delete() }
@@ -167,6 +170,23 @@ class DownloadManager(context: Context, private val http: okhttp3.OkHttpClient) 
         val list = _downloadsFlow.value.filterNot { it.song.mid == record.song.mid } + record
         _downloadsFlow.value = list
         persist(list)
+    }
+
+    /** 下载完成后预取歌词落盘（含译文/罗马音），离线歌词页可直读缓存 */
+    private fun prefetchLyrics(song: Song) {
+        if (song.mid.isEmpty()) return
+        prefetchScope.launch {
+            runCatching {
+                val cache = com.qmusic.wear.ServiceLocator.lyricsCache
+                if (cache.get(song.mid) != null) return@launch
+                val repo = com.qmusic.wear.ServiceLocator.repository
+                val text = runCatching { repo.lyricOf(song) }.getOrDefault("")
+                if (text.isBlank()) return@launch
+                val trans = runCatching { repo.lyricTransOf(song) }.getOrDefault("")
+                val roma = runCatching { repo.lyricRomaOf(song) }.getOrDefault("")
+                cache.put(song.mid, text, trans, roma)
+            }
+        }
     }
 
     // ------------------------- 持久化 -------------------------

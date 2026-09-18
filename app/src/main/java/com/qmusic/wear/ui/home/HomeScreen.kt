@@ -77,6 +77,8 @@ fun HomeScreen(
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenPlaylist: (Long, String) -> Unit,
+    onOpenArtist: (String, String) -> Unit = { _, _ -> },
+    onOpenAlbum: (String, String) -> Unit = { _, _ -> },
     onOpenDaily: () -> Unit,
     onOpenRank: () -> Unit,
     onOpenSquare: () -> Unit,
@@ -88,6 +90,21 @@ fun HomeScreen(
     var showMenu by rememberSaveable { mutableStateOf(false) }
     var swipeAcc by remember { mutableFloatStateOf(0f) }
     val haptics = rememberHaptics()
+
+    // 离线兜底：无网时首页直接落到「已下载音乐」，推荐卡不可用不再整屏报错
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val downloads by ServiceLocator.downloads.downloadsFlow.collectAsStateWithLifecycle()
+    var offline by remember { mutableStateOf(!com.qmusic.wear.util.isNetworkOnline(ctx)) }
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                offline = !com.qmusic.wear.util.isNetworkOnline(ctx)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
 
     Box(Modifier.fillMaxSize()) {
         ScreenScaffold(
@@ -124,6 +141,7 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize().rotaryList(listState),
                 ) {
+                    if (!offline) {
                     // ---- 大卡 1：每日30首 ----
                     item {
                         val rep = now.song?.takeIf { s -> ui.songs.any { it.mid == s.mid } }
@@ -157,7 +175,7 @@ fun HomeScreen(
                             val lucky = remember(ui.songs) { ui.songs.randomOrNull() }
                             BigCard(
                                 title = "猜你想听",
-                                subtitle = "私人雷达 · 随心听",
+                                subtitle = "私人雷达",
                                 coverUrl = lucky?.cover300.orEmpty(),
                                 songName = lucky?.name.orEmpty(),
                                 singers = lucky?.singers.orEmpty(),
@@ -179,7 +197,7 @@ fun HomeScreen(
                     item {
                         BigCard(
                             title = "排行榜",
-                            subtitle = "巅峰榜 · 热歌 · 新歌",
+                            subtitle = "官方榜单",
                             coverUrl = "",
                             songName = "",
                             singers = "",
@@ -206,6 +224,51 @@ fun HomeScreen(
                             onOpen = onOpenSquare,
                         )
                     }
+                    } else {
+                        // ---- 离线模式：只保留可离线播放的能力 ----
+                        item {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_download),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(28.dp),
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text("当前无网络连接", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    if (downloads.isEmpty()) "暂无已下载歌曲" else "已下载 ${downloads.size} 首可离线播放",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        if (downloads.isNotEmpty()) {
+                            item {
+                                BigCard(
+                                    title = "已下载音乐",
+                                    subtitle = "离线播放 · ${downloads.size} 首",
+                                    coverUrl = downloads.first().song.cover300,
+                                    songName = downloads.first().song.name,
+                                    singers = downloads.first().song.singers,
+                                    playingThis = false,
+                                    loading = false,
+                                    colors = listOf(Color(0xFF1C2B22), Color(0xFF121813)),
+                                    onToggle = {
+                                        ServiceLocator.player.playFromList(
+                                            downloads.map { it.song },
+                                            downloads.first().song.mid,
+                                        )
+                                        onOpenPlayer()
+                                    },
+                                    onOpen = onOpenDownloads,
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -227,6 +290,14 @@ fun HomeScreen(
                     onOpenPlaylist = { id, title ->
                         showMenu = false
                         onOpenPlaylist(id, title)
+                    },
+                    onOpenArtist = { mid, name ->
+                        showMenu = false
+                        onOpenArtist(mid, name)
+                    },
+                    onOpenAlbum = { mid, name ->
+                        showMenu = false
+                        onOpenAlbum(mid, name)
                     },
                 )
             }
@@ -367,9 +438,9 @@ private fun BigCard(
                 }
             }
             Spacer(Modifier.size(8.dp))
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(
-                    text = songName.ifEmpty { "点击开始聆听" },
+                    text = songName.ifEmpty { "点击播放" },
                     style = MaterialTheme.typography.labelMedium,
                     color = Color.White,
                     maxLines = 1,

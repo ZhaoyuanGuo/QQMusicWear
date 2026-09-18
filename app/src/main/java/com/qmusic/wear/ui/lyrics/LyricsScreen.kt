@@ -44,6 +44,7 @@ import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.ui.components.BlurCoverBackground
 import com.qmusic.wear.ui.components.SwipeBackBox
 import com.qmusic.wear.ui.theme.LocalIsAmbient
+import com.qmusic.wear.ui.theme.LocalLowPerf
 import kotlinx.coroutines.delay
 
 @Composable
@@ -54,6 +55,7 @@ fun LyricsScreen(
     val now by ServiceLocator.player.state.collectAsStateWithLifecycle()
     val ui by vm.ui.collectAsStateWithLifecycle()
     val isAmbient = LocalIsAmbient.current
+    val lowPerf = LocalLowPerf.current
 
     val listState = rememberLazyListState()
 
@@ -88,7 +90,7 @@ fun LyricsScreen(
         Box(Modifier.fillMaxSize()) {
             BlurCoverBackground(
                 coverUrl = now.song?.cover500.orEmpty(),
-                blurRadius = 56.dp,
+                blurRadius = 20.dp,
                 // AOD 下整体再压暗一档（降亮度显示静态信息）
                 scrim = if (isAmbient) 0.82f else 0.68f,
             )
@@ -96,11 +98,11 @@ fun LyricsScreen(
             ScreenScaffold(
                 timeText = { TimeText() },
             ) { contentPadding ->
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(contentPadding),
-                ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
+            ) {
                     if (ui.lines.isEmpty()) {
                         Column(
                             Modifier.fillMaxSize(),
@@ -152,6 +154,34 @@ fun LyricsScreen(
                                     animationSpec = tween(220),
                                     label = "lyric_size",
                                 )
+                                // 卡拉OK填充：活动行按行内播放进度从左往右填色；
+                                // AOD/低配模式下退化为纯色（省 GPU，AOD 更省电）
+                                val lineStyle = if (active && !isAmbient && !lowPerf) {
+                                    TextStyle(
+                                        brush = Brush.horizontalGradient(
+                                            colorStops = arrayOf(
+                                                0f to lineColor,
+                                                ui.activeProgress to lineColor,
+                                                ui.activeProgress to lineColor.copy(alpha = 0.32f),
+                                                1f to lineColor.copy(alpha = 0.32f),
+                                            ),
+                                        ),
+                                        shadow = Shadow(
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                                            blurRadius = 12f,
+                                            offset = Offset.Zero,
+                                        ),
+                                    )
+                                } else {
+                                    TextStyle(
+                                        color = lineColor,
+                                        shadow = if (active) Shadow(
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                                            blurRadius = 12f,
+                                            offset = Offset.Zero,
+                                        ) else null,
+                                    )
+                                }
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier
@@ -162,20 +192,26 @@ fun LyricsScreen(
                                         text = line.text,
                                         fontSize = lineSize.sp,
                                         fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                                        color = lineColor,
                                         textAlign = TextAlign.Center,
-                                        // 当前行加品牌色微光晕，从灰底中"浮"出来
-                                        style = TextStyle(
-                                            shadow = if (active) Shadow(
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
-                                                blurRadius = 12f,
-                                                offset = Offset.Zero,
-                                            ) else null,
-                                        ),
+                                        style = lineStyle,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(horizontal = 28.dp, vertical = 6.dp),
                                     )
+                                    // 罗马音：原文行下方小字（无罗马音的行不占位）
+                                    ui.roma[index]?.let { r ->
+                                        Text(
+                                            text = r,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.60f),
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 28.dp),
+                                        )
+                                    }
                                     // 译文：原文行下方灰色小字（无翻译的行不占位）
                                     ui.trans[index]?.let { t ->
                                         Text(
@@ -197,32 +233,35 @@ fun LyricsScreen(
                         }
                     }
 
-                    // 顶部/底部渐隐边缘：半透明峰值 + 渐变拉长，文字"隐入背景"而非隐入黑条
-                    // （纯黑不透明在暖色/亮色封面上会形成明显黑带，峰值需与背景自身压暗程度衔接）
-                    Box(
-                        Modifier
-                            .align(Alignment.TopCenter)
-                            .fillMaxWidth()
-                            .height(64.dp)
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent),
-                                ),
-                            ),
-                    )
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(64.dp)
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)),
-                                ),
-                            ),
-                    )
+                    // 顶部/底部渐隐边缘已上移至屏幕层级（见下方），保证全宽无端点硬边
                 }
             }
+
+            // 顶部/底部渐隐边缘（屏幕级、全宽、从屏幕边缘起渐变）：
+            // 放在 contentPadding 内会因圆屏两侧留空 + 顶部硬起点形成「内缩暗卡」；
+            // 这里从 y=0 / y=bottom 开始渐变且铺满全宽，所有过渡都是渐变、无任何硬边
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent),
+                        ),
+                    ),
+            )
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)),
+                        ),
+                    ),
+            )
         }
     }
 }

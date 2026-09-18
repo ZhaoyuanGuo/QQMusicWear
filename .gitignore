@@ -14,5 +14,8 @@ build/
 *.keystore
 crash.log
 
+# UI 验证临时截图
+.ui-check/
+
 # 音乐源签名私钥（仅开发者本地保存，公钥随仓库提交）
 tools/source-signing/source_signing_private.key

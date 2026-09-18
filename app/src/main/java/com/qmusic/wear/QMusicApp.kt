@@ -60,6 +60,8 @@ object ServiceLocator {
         private set
     lateinit var playStats: com.qmusic.wear.data.store.PlayStatsStore
         private set
+    lateinit var lyricsCache: com.qmusic.wear.data.store.LyricsCache
+        private set
 
     private val _credential = MutableStateFlow(Credential.EMPTY)
     val credential: StateFlow<Credential> = _credential.asStateFlow()
@@ -92,6 +94,7 @@ object ServiceLocator {
         downloads = com.qmusic.wear.data.download.DownloadManager(appContext, api.http)
         searchHistory = com.qmusic.wear.data.store.SearchHistoryStore(appContext)
         agreementStore = com.qmusic.wear.data.store.AgreementStore(appContext)
+        lyricsCache = com.qmusic.wear.data.store.LyricsCache(appContext)
 
         appScope.launch {
             credentialStore.credentialFlow.collect { cred ->
@@ -143,6 +146,8 @@ object CrashLog {
     }
 
     fun log(e: Throwable) {
+        // 协程取消（如组合作用域退场）是正常控制流，不是崩溃
+        if (e is kotlinx.coroutines.CancellationException) return
         runCatching {
             if (CrashLog::context.isInitialized) {
                 java.io.File(context.filesDir, "crash.log")
@@ -193,6 +198,7 @@ class QMusicApp : Application(), SingletonImageLoader.Factory {
                     ),
                 )
             }
-            .crossfade(true)
+            // 低配置设备模式关闭图片交叉淡化（读取持久化设置；切换后重启生效）
+            .crossfade(!ServiceLocator.settingsStore.lowPerfFlow.value)
             .build()
 }

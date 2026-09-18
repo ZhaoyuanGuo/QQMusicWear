@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -15,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +40,7 @@ import com.qmusic.wear.R
 import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.data.model.Quality
 import com.qmusic.wear.data.player.SleepTimer
+import com.qmusic.wear.util.formatBytes
 import com.qmusic.wear.ui.components.GlassPanel
 import com.qmusic.wear.ui.components.GlassRow
 import com.qmusic.wear.ui.components.PageTitle
@@ -94,6 +97,15 @@ fun SettingsScreen(
         if (!msg.isNullOrEmpty()) {
             android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
             vm.dismissSourceUpdate()
+        }
+    }
+
+    // 缓存清理结果：Toast 提示
+    LaunchedEffect(ui.cacheClearMessage) {
+        val msg = ui.cacheClearMessage
+        if (!msg.isNullOrEmpty()) {
+            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+            vm.dismissCacheClear()
         }
     }
 
@@ -177,7 +189,7 @@ fun SettingsScreen(
                                 style = MaterialTheme.typography.labelLarge,
                             )
                             Text(
-                                "扫码登录，同步我喜欢与歌单",
+                                "扫码登录同步歌单",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -246,6 +258,115 @@ fun SettingsScreen(
                 )
             }
 
+            // ---- 显示模式 ----
+            item { SectionHeader("显示模式") }
+            item {
+                GlassRow(onClick = { vm.setKeepScreenOn(!ui.keepScreenOn) }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_brightness),
+                        contentDescription = null,
+                        tint = if (ui.keepScreenOn) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(17.dp),
+                    )
+                    Spacer(Modifier.size(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "屏幕常亮",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (ui.keepScreenOn) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            "播放页不熄屏",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    TogglePill(checked = ui.keepScreenOn)
+                }
+            }
+            item {
+                GlassRow(onClick = { vm.setLowPerf(!ui.lowPerf) }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_brightness),
+                        contentDescription = null,
+                        tint = if (ui.lowPerf) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(17.dp),
+                    )
+                    Spacer(Modifier.size(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "低配置设备模式",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (ui.lowPerf) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            "关闭特效与动画，运行更流畅",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    TogglePill(checked = ui.lowPerf)
+                }
+            }
+
+            // ---- 存储 ----
+            item { SectionHeader("存储") }
+            item {
+                val downloads by ServiceLocator.downloads.downloadsFlow.collectAsStateWithLifecycle()
+                GlassPanel {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_download),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(17.dp),
+                        )
+                        Spacer(Modifier.size(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("已下载歌曲", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                "${downloads.size} 首 · " +
+                                    downloads.sumOf { it.sizeBytes }.formatBytes(),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+            item {
+                GlassRow(onClick = { vm.clearImageCache() }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_refresh),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(17.dp),
+                    )
+                    Spacer(Modifier.size(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (ui.cacheClearMessage == "") "清理中…" else "清理图片缓存",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Text(
+                            "释放封面图片缓存空间",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
             // ---- 音乐源 ----
             item { SectionHeader("音乐源") }
             item {
@@ -295,7 +416,7 @@ fun SettingsScreen(
                     Column(Modifier.weight(1f)) {
                         Text("从存储导入源", style = MaterialTheme.typography.labelLarge)
                         Text(
-                            "镜像全部失效时的兜底",
+                            "镜像失效时兜底",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -341,7 +462,7 @@ fun SettingsScreen(
                             else MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            "启动时显示「仅供学习交流使用」",
+                            "仅供学习交流提示",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -349,6 +470,38 @@ fun SettingsScreen(
                         )
                     }
                     TogglePill(checked = ui.launchToastEnabled)
+                }
+            }
+
+            // ---- 关于 ----
+            item { SectionHeader("关于") }
+            item {
+                val versionName = remember {
+                    runCatching {
+                        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+                    }.getOrNull()
+                }
+                GlassPanel {
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(
+                            "QQMusicWear",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Spacer(Modifier.size(3.dp))
+                        Text(
+                            "版本 ${versionName ?: "-"}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.size(2.dp))
+                        Text(
+                            "仅供学习交流使用，请于24小时内删除",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
 

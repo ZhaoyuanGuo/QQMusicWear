@@ -30,7 +30,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
@@ -45,6 +44,7 @@ import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.Song
 import com.qmusic.wear.ui.components.GlassRow
 import com.qmusic.wear.ui.components.PageTitle
+import com.qmusic.wear.ui.components.PlayAllChip
 import com.qmusic.wear.ui.components.PlaylistRow
 import com.qmusic.wear.ui.components.RoundCover
 import com.qmusic.wear.ui.components.SectionHeader
@@ -179,16 +179,9 @@ fun ToplistScreen(
             item {
                 PageTitle(title)
                 if (songs.isNotEmpty()) {
-                    Spacer(Modifier.height(2.dp))
-                    Button(onClick = { playAll() }) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_qm_play),
-                            contentDescription = null,
-                            modifier = Modifier.size(15.dp),
-                        )
-                        Spacer(Modifier.size(8.dp))
-                        Text("播放全部", style = MaterialTheme.typography.labelMedium)
-                    }
+                    Spacer(Modifier.height(4.dp))
+                    // 与歌单详情页同款玻璃小胶囊（此前实心绿大按钮风格突兀且遮挡标题）
+                    PlayAllChip(onClick = { playAll() })
                 }
             }
 

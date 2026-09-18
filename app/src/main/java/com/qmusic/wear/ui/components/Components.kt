@@ -35,6 +35,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -45,6 +46,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
@@ -74,11 +76,15 @@ import com.qmusic.wear.data.model.Song
 fun BlurCoverBackground(
     coverUrl: String,
     modifier: Modifier = Modifier,
-    blurRadius: Dp = 44.dp,
+    // 该机 GPU 上模糊会在图像边界内侧衰减出暗边（宽≈2.2px/dp），半径越大暗边越宽；
+    // 20dp 保证 1.6f 放大后暗边完全落在屏幕外（实测 44dp 即使用 1.5f 也压不住）
+    blurRadius: Dp = 20.dp,
     scrim: Float = 0.55f,
 ) {
+    // 低配置设备模式：跳过封面解码 + RenderEffect 模糊（全页最重的两步），仅保留品牌渐变 + 压暗
+    val lowPerf = com.qmusic.wear.ui.theme.LocalLowPerf.current
     // 亮封面动态加压：平均亮度 > 0.55 时额外降饱和 + 提升 scrim（上限 0.76）
-    val coverLum = rememberCoverLuminance(coverUrl)
+    val coverLum = rememberCoverLuminance(if (lowPerf) "" else coverUrl)
     val isBright = (coverLum ?: 0f) > 0.55f
     val effScrim = if (isBright) (scrim + 0.16f).coerceAtMost(0.76f) else scrim
     Box(modifier.fillMaxSize()) {
@@ -96,7 +102,7 @@ fun BlurCoverBackground(
                     ),
                 ),
         )
-        if (coverUrl.isNotEmpty()) {
+        if (coverUrl.isNotEmpty() && !lowPerf) {
             AsyncImage(
                 model = coverUrl,
                 contentDescription = null,
@@ -108,7 +114,12 @@ fun BlurCoverBackground(
                 },
                 modifier = Modifier
                     .fillMaxSize()
-                    .blur(blurRadius),
+                    // 模糊衰减暗边被 1.6f 放大推出屏幕外（配合 20dp 小半径），保证铺满圆屏
+                    .graphicsLayer {
+                        scaleX = 1.6f
+                        scaleY = 1.6f
+                    }
+                    .blur(blurRadius, edgeTreatment = BlurredEdgeTreatment.Unbounded),
             )
             // 圆屏径向暗角：中心透明 -> 边缘加深，突出中心内容（One UI Watch 质感）
             Box(
@@ -249,22 +260,36 @@ fun EdgeProgressRing(
     }
 }
 
-/** 圆形封面 */
+/** 圆形封面（无封面 URL 时显示占位图标，避免下载歌曲等场景出现空白圆） */
 @Composable
 fun RoundCover(
     url: String,
     size: Dp,
     modifier: Modifier = Modifier,
 ) {
-    AsyncImage(
-        model = url,
-        contentDescription = "歌曲封面",
-        contentScale = ContentScale.Crop,
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = modifier
             .size(size)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-    )
+    ) {
+        if (url.isNotEmpty()) {
+            AsyncImage(
+                model = url,
+                contentDescription = "歌曲封面",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                painter = painterResource(R.drawable.ic_playlist),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                modifier = Modifier.size(size * 0.42f),
+            )
+        }
+    }
 }
 
 /** 圆角方封面（歌单） */
@@ -453,6 +478,38 @@ fun CountChip(text: String, modifier: Modifier = Modifier) {
     )
 }
 
+/** 播放全部小胶囊：品牌绿玻璃底（列表页统一入口样式，榜单/歌单/搜索共用） */
+@Composable
+fun PlayAllChip(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    label: String = "播放全部",
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+            .border(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f), RoundedCornerShape(50))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_play),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(13.dp),
+        )
+        Spacer(Modifier.size(4.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
 /** 歌单头卡片：封面 + 标题 + 数量徽章 + 播放全部（歌单/喜欢/最近页统一头部） */
 @Composable
 fun PlaylistHeader(
@@ -485,29 +542,10 @@ fun PlaylistHeader(
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onPlayAll != null) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(50))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
-                            .clickable(onClick = onPlayAll)
-                            .padding(vertical = 7.dp),
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_play),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(13.dp),
-                        )
-                        Spacer(Modifier.size(4.dp))
-                        Text(
-                            "播放全部",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
+                    PlayAllChip(
+                        onClick = onPlayAll,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
                 if (onDownloadAll != null) {
                     Spacer(Modifier.size(6.dp))
@@ -552,6 +590,16 @@ fun PlaylistRow(
     modifier: Modifier = Modifier,
     badge: (@Composable () -> Unit)? = null,
 ) {
+    // 副标题拼接：创作者为空时不留悬空的「·」；计数异常（源数据把播放量塞进 songCount
+    // 之类，出现 >10 万的不合理值）时降级不显示，避免「23307075首」的尴尬
+    val countOk = songCount in 1..100_000
+    val subtitle = buildString {
+        if (countOk) append("${songCount}首")
+        if (creatorNick.isNotBlank()) {
+            if (isNotEmpty()) append(" · ")
+            append(creatorNick)
+        }
+    }
     GlassRow(onClick = onClick, modifier = modifier) {
         SquareCover(url = coverUrl, size = 42.dp, corner = 12.dp)
         Spacer(Modifier.size(9.dp))
@@ -562,13 +610,15 @@ fun PlaylistRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                "${songCount}首 · $creatorNick",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (subtitle.isNotEmpty()) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         badge?.invoke()
     }

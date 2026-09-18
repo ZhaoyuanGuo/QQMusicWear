@@ -127,3 +127,16 @@ internal data class ResolveResultDto(
     val items: List<ResolvedUrlDto?> = emptyList(),
     val debug: String = "",
 )
+
+@Serializable
+internal data class ArtistSongsDto(
+    val songs: List<SongDto> = emptyList(),
+    val hasMore: Boolean = false,
+)
+
+@Serializable
+internal data class AlbumDetailDto(
+    val name: String = "",
+    val coverUrl: String = "",
+    val songs: List<SongDto> = emptyList(),
+)

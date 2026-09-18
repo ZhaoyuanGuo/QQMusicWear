@@ -12,8 +12,8 @@ android {
         applicationId = "com.qmusic.wear"
         minSdk = 33
         targetSdk = 36
-        versionCode = 34
-        versionName = "1.9.6"
+        versionCode = 35
+        versionName = "2.0.0"
     }
 
     buildTypes {
@@ -61,6 +61,12 @@ dependencies {
 
     // Wear OS Tiles（「正在播放」磁贴）
     implementation("androidx.wear.tiles:tiles:1.5.0")
+
+    // Ongoing Activity（Wear OS 4+ 播放常驻卡片）
+    implementation("androidx.wear:wear-ongoing:1.0.0")
+
+    // 表盘 Complication 数据源（「正在播放」）
+    implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1")
 
     // Compose 基础 + Activity
     implementation(platform("androidx.compose:compose-bom:2026.06.00"))

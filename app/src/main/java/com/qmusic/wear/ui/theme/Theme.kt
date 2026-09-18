@@ -8,6 +8,9 @@ import androidx.wear.compose.material3.MaterialTheme
 /** AOD（环境模式）标志：MainActivity 经 AmbientLifecycleObserver 更新，各页据此停动画/降亮度 */
 val LocalIsAmbient = staticCompositionLocalOf { false }
 
+/** 低配置设备模式：MainActivity 从设置读取后全局下发，各页据此关闭重特效/缩短动画 */
+val LocalLowPerf = staticCompositionLocalOf { false }
+
 // QQ 音乐品牌绿
 val QmGreen = Color(0xFF31C27C)
 val QmGreenDim = Color(0xFF1E8F5A)

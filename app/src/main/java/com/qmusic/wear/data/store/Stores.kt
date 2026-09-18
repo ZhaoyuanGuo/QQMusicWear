@@ -18,6 +18,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import java.io.File
 
 /**
  * 登录凭证持久化（SharedPreferences）。
@@ -92,6 +93,24 @@ class SettingsStore(context: Context) {
         _launchToastFlow.value = enabled
     }
 
+    /** 播放页屏幕常亮（显示模式设置） */
+    private val _keepScreenOnFlow = MutableStateFlow(prefs.getBoolean(KEY_KEEP_SCREEN_ON, false))
+    val keepScreenOnFlow: StateFlow<Boolean> = _keepScreenOnFlow.asStateFlow()
+
+    fun setKeepScreenOn(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, enabled).apply()
+        _keepScreenOnFlow.value = enabled
+    }
+
+    /** 低配置设备模式：关闭模糊背景/封面旋转/光晕等重特效，削减页面转场，低端手表更流畅 */
+    private val _lowPerfFlow = MutableStateFlow(prefs.getBoolean(KEY_LOW_PERF, false))
+    val lowPerfFlow: StateFlow<Boolean> = _lowPerfFlow.asStateFlow()
+
+    fun setLowPerf(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LOW_PERF, enabled).apply()
+        _lowPerfFlow.value = enabled
+    }
+
     private fun readPlayMode(): PlayMode =
         runCatching { PlayMode.valueOf(prefs.getString(KEY_PLAY_MODE, PlayMode.SEQUENTIAL.name)!!) }
             .getOrDefault(PlayMode.SEQUENTIAL)
@@ -123,6 +142,8 @@ class SettingsStore(context: Context) {
         const val KEY_QUALITY = "quality"
         const val KEY_DOWNLOAD_QUALITY = "download_quality"
         const val KEY_LAUNCH_TOAST = "launch_toast"
+        const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        const val KEY_LOW_PERF = "low_perf"
     }
 }
 
@@ -456,5 +477,56 @@ class AgreementStore(context: Context) {
 
         /** 协议内容变更时 +1，老用户将重新收到弹窗 */
         const val AGREEMENT_VERSION = 3
+    }
+}
+
+/** 一首歌的歌词缓存包（原文/译文/罗马音） */
+data class LyricBundle(
+    val text: String,
+    val trans: String,
+    val roma: String,
+)
+
+/**
+ * 歌词磁盘缓存：下载歌曲时预取落盘，离线也能看歌词（含译文/罗马音）。
+ * 存储为 files/lyrics/<mid>.json；仅缓存原文非空的条目。
+ */
+class LyricsCache(context: Context) {
+
+    private val dir = File(context.filesDir, "lyrics").apply { mkdirs() }
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    fun get(mid: String): LyricBundle? {
+        if (mid.isEmpty()) return null
+        return runCatching {
+            val f = File(dir, "$mid.json")
+            if (!f.exists()) return null
+            val obj = json.parseToJsonElement(f.readText()).jsonObject
+            LyricBundle(
+                text = obj.str("text"),
+                trans = obj.str("trans"),
+                roma = obj.str("roma"),
+            )
+        }.getOrNull()
+    }
+
+    fun put(mid: String, text: String, trans: String, roma: String) {
+        if (mid.isEmpty() || text.isBlank()) return
+        runCatching {
+            val obj = buildJsonObject {
+                put("text", text)
+                put("trans", trans)
+                put("roma", roma)
+            }
+            File(dir, "$mid.json").writeText(obj.toString())
+        }
+    }
+
+    /** 缓存占用（字节），供设置页存储统计展示 */
+    fun sizeBytes(): Long =
+        runCatching { dir.listFiles()?.sumOf { it.length() } ?: 0L }.getOrDefault(0L)
+
+    fun clear() {
+        runCatching { dir.listFiles()?.forEach { it.delete() } }
     }
 }

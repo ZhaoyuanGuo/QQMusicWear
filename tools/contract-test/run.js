@@ -24,8 +24,10 @@ const genericBody = JSON.stringify({ code: 0, req_1: { code: 0, data: {} } });
 /** 必须存在的 handler（与 APK 侧调用一一对应） */
 const REQUIRED_HANDLERS = [
   'ping', 'recommendSongs', 'recommendNewSongs', 'playlistDetail',
-  'toplists', 'toplistSongs', 'musicHallShelves', 'myPlaylists',
-  'favPlaylists', 'userProfile', 'lyric', 'lyricTrans', 'searchAll', 'resolveUrls',
+  'toplists', 'toplistSongs', 'artistSongs', 'albumSongs',
+  'musicHallShelves', 'myPlaylists',
+  'favPlaylists', 'userProfile', 'lyric', 'lyricTrans', 'lyricRoma',
+  'searchAll', 'resolveUrls',
   'setLike', 'qrLogin',
 ];
 

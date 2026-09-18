@@ -7,7 +7,10 @@ import com.qmusic.wear.data.api.ToplistItem
 import com.qmusic.wear.data.api.favPlaylists
 import com.qmusic.wear.data.api.guessRecommend
 import com.qmusic.wear.data.api.lyric
+import com.qmusic.wear.data.api.lyricRoma
 import com.qmusic.wear.data.api.lyricTrans
+import com.qmusic.wear.data.api.albumSongs
+import com.qmusic.wear.data.api.artistSongs
 import com.qmusic.wear.data.api.musicHallShelves
 import com.qmusic.wear.data.api.myPlaylists
 import com.qmusic.wear.data.api.playlistDetail
@@ -16,6 +19,7 @@ import com.qmusic.wear.data.api.setLike
 import com.qmusic.wear.data.api.toplistSongs
 import com.qmusic.wear.data.api.toplists
 import com.qmusic.wear.data.api.userProfile
+import com.qmusic.wear.data.model.AlbumDetail
 import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.Quality
 import com.qmusic.wear.data.model.ResolvedUrl
@@ -108,6 +112,18 @@ class MusicRepository(
     /** 歌词翻译（无译文或源脚本未提供该能力时返回空串） */
     suspend fun lyricTransOf(song: Song): String =
         runCatching { api.lyricTrans(song.mid, song.songId) }.getOrDefault("")
+
+    /** 歌词罗马音（无罗马音或源脚本未提供该能力时返回空串） */
+    suspend fun lyricRomaOf(song: Song): String =
+        runCatching { api.lyricRoma(song.mid, song.songId) }.getOrDefault("")
+
+    /** 歌手歌曲（分页）；失败返回空列表 */
+    suspend fun artistSongs(singerMid: String, page: Int): Pair<List<Song>, Boolean> =
+        runCatching { api.artistSongs(singerMid, page) }.getOrDefault(emptyList<Song>() to false)
+
+    /** 专辑详情；失败返回 null */
+    suspend fun albumSongs(albumMid: String): AlbumDetail? =
+        runCatching { api.albumSongs(albumMid) }.getOrNull()
 
     suspend fun searchSongs(query: String): List<Song> =
         searchAll(query).songs

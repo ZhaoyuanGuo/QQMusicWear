@@ -8,6 +8,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +39,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.ambient.AmbientLifecycleObserver
 import kotlinx.coroutines.launch
 import com.qmusic.wear.ui.agreement.AgreementScreen
+import com.qmusic.wear.ui.browse.AlbumScreen
+import com.qmusic.wear.ui.browse.ArtistScreen
 import com.qmusic.wear.ui.components.LiveCapsule
 import com.qmusic.wear.ui.components.SwipeBackBox
 import com.qmusic.wear.ui.home.DailyScreen
@@ -55,11 +60,12 @@ import com.qmusic.wear.ui.source.SourceGateScreen
 import com.qmusic.wear.data.source.SourceManager
 import com.qmusic.wear.data.source.SourceState
 import com.qmusic.wear.ui.theme.LocalIsAmbient
+import com.qmusic.wear.ui.theme.LocalLowPerf
 import com.qmusic.wear.ui.theme.QMusicTheme
 
 /** 全部页面（状态机导航，配合 AnimatedContent 实现页面过渡） */
 private enum class Screen {
-    Home, Player, Lyrics, Queue, Login, Recent, SongList, Settings, Downloads, Daily, Rank, Toplist, Square,
+    Home, Player, Lyrics, Queue, Login, Recent, SongList, Settings, Downloads, Daily, Rank, Toplist, Square, Artist, Album,
 }
 
 /** 是否具备 Wear OS 共享库（真手表具备；缺失环境跳过 AOD 注册避免闪退） */
@@ -71,7 +77,7 @@ private fun hasWearableSharedLibrary(): Boolean = runCatching {
 private fun navDepth(s: Screen): Int = when (s) {
     Screen.Home -> 0
     Screen.Player, Screen.Daily, Screen.Rank, Screen.Square, Screen.Recent, Screen.Settings, Screen.Downloads -> 1
-    Screen.Lyrics, Screen.Queue, Screen.Login, Screen.SongList, Screen.Toplist -> 2
+    Screen.Lyrics, Screen.Queue, Screen.Login, Screen.SongList, Screen.Toplist, Screen.Artist, Screen.Album -> 2
 }
 
 class MainActivity : ComponentActivity() {
@@ -97,7 +103,12 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             QMusicTheme {
-                CompositionLocalProvider(LocalIsAmbient provides isAmbientState.value) {
+                // 低配置设备模式全局下发（各页据此关特效/砍动画）
+                val lowPerf by ServiceLocator.settingsStore.lowPerfFlow.collectAsStateWithLifecycle()
+                CompositionLocalProvider(
+                    LocalIsAmbient provides isAmbientState.value,
+                    LocalLowPerf provides lowPerf,
+                ) {
                     AppRoot()
                 }
             }
@@ -147,12 +158,13 @@ private fun AppRoot() {
                 }
             }
         }
-        // 自动下载只触发一次（key=Unit）：若以 sourceState 为 key，状态变为 Downloading 会
-        // 取消正在运行的下载协程（"coroutine scope left the composition"）。
+        // 自动触发一次（key=Unit）：有缓存走 loadCached（不发网络请求），无缓存才下载。
+        // 之前直接 downloadNow 会在「缓存加载完成 → 门控页退场」时被组合作用域取消，
+        // 产生无意义的"源加载失败"+ crash.log 记录。
         // 仅 Missing 态触发；Failed 态等待用户手动「重试」，避免失败重试循环。
         LaunchedEffect(Unit) {
             if (SourceManager.state.value is SourceState.Missing) {
-                SourceManager.downloadNow()
+                SourceManager.ensureReady()
             }
         }
         SourceGateScreen(
@@ -166,6 +178,9 @@ private fun AppRoot() {
     var screen by rememberSaveable { mutableStateOf(Screen.Home) }
     var songListId by rememberSaveable { mutableStateOf(0L) }
     var songListTitle by rememberSaveable { mutableStateOf("") }
+    var artistMid by rememberSaveable { mutableStateOf("") }
+    var artistName by rememberSaveable { mutableStateOf("") }
+    var albumMid by rememberSaveable { mutableStateOf("") }
     var toplistId by rememberSaveable { mutableStateOf(0) }
     var toplistTitle by rememberSaveable { mutableStateOf("") }
 
@@ -174,6 +189,20 @@ private fun AppRoot() {
     LaunchedEffect(Unit) {
         if (ServiceLocator.settingsStore.launchToastFlow.value) {
             android.widget.Toast.makeText(ctx, "仅供学习交流使用", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // 显示模式：开启屏幕常亮后，播放/歌词页保持屏幕点亮，离开页面自动清除
+    val keepScreenOn by ServiceLocator.settingsStore.keepScreenOnFlow.collectAsStateWithLifecycle()
+    DisposableEffect(screen, keepScreenOn) {
+        val win = (ctx as? android.app.Activity)?.window
+        if (keepScreenOn && (screen == Screen.Player || screen == Screen.Lyrics)) {
+            win?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            win?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            win?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 
@@ -208,12 +237,27 @@ private fun AppRoot() {
     // 播放状态：全局实况胶囊依赖（有歌曲时在所有页面底部悬浮，协议页不经过此处）
     val now by ServiceLocator.player.state.collectAsStateWithLifecycle()
 
+    // 低配置模式：页面转场直接硬切（省 GPU 合成与动画帧）
+    val lowPerf = LocalLowPerf.current
     Box(Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = screen,
             transitionSpec = {
+                if (lowPerf) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
                 // 方向化转场：歌词从右推入、队列从下推入，其余按导航深度横向滑动
                 when {
+                    // 播放↔歌词共享同一模糊背景，整屏硬推会让两块背景产生接缝跳变；
+                    // 改为交叉淡化 + 小幅位移，背景连续、过渡柔和
+                    initialState == Screen.Player && targetState == Screen.Lyrics ->
+                        (fadeIn(tween(320)) + slideInHorizontally(tween(320)) { it / 4 }) togetherWith
+                            (fadeOut(tween(320)) + slideOutHorizontally(tween(320)) { -it / 6 })
+
+                    initialState == Screen.Lyrics && targetState == Screen.Player ->
+                        (fadeIn(tween(320)) + slideInHorizontally(tween(320)) { -it / 4 }) togetherWith
+                            (fadeOut(tween(320)) + slideOutHorizontally(tween(320)) { it / 6 })
+
                     initialState == Screen.Player && targetState == Screen.Queue ->
                         slideInVertically(tween(260)) { it } togetherWith
                             slideOutVertically(tween(260)) { -it }
@@ -232,6 +276,7 @@ private fun AppRoot() {
 
                     else -> fadeIn(tween(220)) togetherWith fadeOut(tween(220))
                 }
+                }
             },
             label = "page_nav",
         ) { s ->
@@ -249,6 +294,15 @@ private fun AppRoot() {
                     songListTitle = title
                     songListFrom = Screen.Home
                     screen = Screen.SongList
+                },
+                onOpenArtist = { mid, name ->
+                    artistMid = mid
+                    artistName = name
+                    screen = Screen.Artist
+                },
+                onOpenAlbum = { mid, _ ->
+                    albumMid = mid
+                    screen = Screen.Album
                 },
                 onOpenDaily = { screen = Screen.Daily },
                 onOpenRank = { screen = Screen.Rank },
@@ -334,6 +388,21 @@ private fun AppRoot() {
                         songListFrom = Screen.Square
                         screen = Screen.SongList
                     },
+                )
+            }
+
+            Screen.Artist -> SwipeBackBox(onBack = { screen = Screen.Home }) {
+                ArtistScreen(
+                    singerMid = artistMid,
+                    singerName = artistName,
+                    onOpenPlayer = { screen = Screen.Player },
+                )
+            }
+
+            Screen.Album -> SwipeBackBox(onBack = { screen = Screen.Home }) {
+                AlbumScreen(
+                    albumMid = albumMid,
+                    onOpenPlayer = { screen = Screen.Player },
                 )
             }
         }

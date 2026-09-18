@@ -121,7 +121,7 @@ fun PlayerScreen(
     LaunchedEffect(volFlashTick) {
         if (volFlashTick > 0) {
             volFlashVisible = true
-            delay(1600)
+            delay(3500)
             volFlashVisible = false
         }
     }
@@ -349,9 +349,11 @@ private fun PlayerContent(
         val coverTint = rememberCoverColor(now.song?.cover500.orEmpty())
 
         // 播放时封面缓慢旋转（约30秒/圈），暂停即停并轻微变暗；AOD 下静止
+        // 低配置设备模式：每帧 withFrameNanos 重绘旋转开销大，直接静止
         var discRotation by remember { mutableFloatStateOf(0f) }
-        LaunchedEffect(now.isPlaying, isAmbient) {
-            if (now.isPlaying && !isAmbient) {
+        val lowPerf = com.qmusic.wear.ui.theme.LocalLowPerf.current
+        LaunchedEffect(now.isPlaying, isAmbient, lowPerf) {
+            if (now.isPlaying && !isAmbient && !lowPerf) {
                 var lastFrame = withFrameNanos { it }
                 while (true) {
                     withFrameNanos { frameTime ->
@@ -553,8 +555,12 @@ private fun SubControlsRow(
             when {
                 download.running -> Box(
                     contentAlignment = Alignment.Center,
-                    // 与其余按钮的42dp命中区对齐，避免状态切换时行内抖动
-                    modifier = Modifier.size(42.dp),
+                    // 与其余按钮的42dp命中区对齐，避免状态切换时行内抖动；点击进下载管理；
+                    // 圆形裁剪让 ripple 呈圆形，避免方形灰块
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onOpenDownloads),
                 ) {
                     CircularProgressIndicator(
                         progress = { download.progress },
@@ -607,6 +613,8 @@ private fun QmIconButton(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .size(42.dp)
+            // 圆形裁剪：ripple 沿圆形扩散，不出现方形灰块
+            .clip(CircleShape)
             .clickable {
                 haptics.tap()
                 onClick()
@@ -643,8 +651,9 @@ private fun QmPlayPauseButton(playing: Boolean, isAmbient: Boolean) {
         ),
         label = "play_scale",
     )
-    // 播放时光晕呼吸起伏；暂停/AOD 静止为低亮度
-    val glowAlpha: Float = if (playing && !isAmbient) {
+    // 播放时光晕呼吸起伏；暂停/AOD 静止为低亮度；低配置设备模式取消呼吸动画（静止低亮度）
+    val lowPerf = com.qmusic.wear.ui.theme.LocalLowPerf.current
+    val glowAlpha: Float = if (playing && !isAmbient && !lowPerf) {
         val pulse by rememberInfiniteTransition(label = "glow").animateFloat(
             initialValue = 0.16f,
             targetValue = 0.30f,
@@ -748,9 +757,10 @@ private fun SubControlChip(
     val haptics = rememberHaptics()
     Box(
         contentAlignment = Alignment.Center,
-        // 命中区42dp，视觉圆底28dp不变
+        // 命中区42dp，视觉圆底28dp不变；圆形裁剪让 ripple 呈圆形，避免方形灰块
         modifier = modifier
             .size(42.dp)
+            .clip(CircleShape)
             .combinedClickable(
                 onClick = {
                     haptics.tap()

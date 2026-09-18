@@ -82,6 +82,8 @@ fun MineOverlay(
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenPlaylist: (Long, String) -> Unit,
+    onOpenArtist: (String, String) -> Unit = { _, _ -> },
+    onOpenAlbum: (String, String) -> Unit = { _, _ -> },
     vm: MineViewModel = viewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -234,7 +236,16 @@ fun MineOverlay(
                                     onOpenPlayer()
                                 }
                             },
-                            onSearchSinger = { name -> vm.onQueryChange(name) },
+                            onOpenArtist = { singer ->
+                                onDismiss()
+                                onOpenArtist(singer.mid, singer.name)
+                            },
+                            onOpenAlbumOfSong = { song ->
+                                if (song.albumMid.isNotEmpty()) {
+                                    onDismiss()
+                                    onOpenAlbum(song.albumMid, song.albumName)
+                                }
+                            },
                             onOpenPlaylist = { pl ->
                                 onDismiss()
                                 onOpenPlaylist(pl.disstid, pl.name)
@@ -284,9 +295,11 @@ private fun MineSearchField(
                 Spacer(Modifier.size(8.dp))
                 if (query.isEmpty()) {
                     Text(
-                        "搜索歌曲 / 歌手 / 歌单",
+                        "搜索歌曲/歌手/歌单",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 // 文本编辑区占剩余宽度，麦克风固定在右侧
@@ -441,6 +454,7 @@ private fun MineTabs(
                 }
                 GlassPanel {
                     Column(Modifier.fillMaxWidth()) {
+                        // 拆行显示避免长文案在圆屏折行：标题行 + 数值行 + 最常听
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_history),
@@ -450,18 +464,28 @@ private fun MineTabs(
                             )
                             Spacer(Modifier.size(10.dp))
                             Text(
-                                "本周已听 $durText · ${stats.playCount}次",
+                                "本周已听",
                                 style = MaterialTheme.typography.labelLarge,
                             )
                         }
+                        Spacer(Modifier.size(3.dp))
+                        Text(
+                            "$durText · ${stats.playCount}次",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 27.dp),
+                        )
                         if (stats.topName.isNotEmpty()) {
-                            Spacer(Modifier.size(4.dp))
+                            Spacer(Modifier.size(2.dp))
                             Text(
                                 "最常听：${stats.topName} · ${stats.topSingers}（${stats.topCount}次）",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 27.dp),
                             )
                         }
                     }
@@ -523,7 +547,7 @@ private fun MineTabs(
                         style = MaterialTheme.typography.labelLarge,
                     )
                     Text(
-                        "已下载歌曲 · 长按删除",
+                        "长按删除歌曲",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -547,7 +571,7 @@ private fun MineTabs(
                         style = MaterialTheme.typography.labelLarge,
                     )
                     Text(
-                        "默认音质 · 账号与登录",
+                        "音质与账号",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -564,7 +588,8 @@ private fun SearchResults(
     result: SearchResult,
     onPlaySong: (Song) -> Unit,
     onPlayAll: (List<Song>) -> Unit,
-    onSearchSinger: (String) -> Unit,
+    onOpenArtist: (com.qmusic.wear.data.model.Singer) -> Unit,
+    onOpenAlbumOfSong: (Song) -> Unit,
     onOpenPlaylist: (Playlist) -> Unit,
 ) {
     val empty = result.songs.isEmpty() && result.singers.isEmpty() && result.playlists.isEmpty()
@@ -628,7 +653,7 @@ private fun SearchResults(
                 modifier = Modifier.fillMaxSize().rotaryList(searchListState),
             ) {
                 items(result.singers) { singer ->
-                    GlassRow(onClick = { onSearchSinger(singer.name) }) {
+                    GlassRow(onClick = { onOpenArtist(singer) }) {
                         Icon(
                             painter = painterResource(R.drawable.ic_user),
                             contentDescription = null,
@@ -667,7 +692,10 @@ private fun SearchResults(
             ) {
                 item { ListHeader2("播放全部") { onPlayAll(result.songs) } }
                 items(result.songs) { song ->
-                    GlassRow(onClick = { onPlaySong(song) }) {
+                    GlassRow(
+                        onClick = { onPlaySong(song) },
+                        onLongClick = { onOpenAlbumOfSong(song) },
+                    ) {
                         RoundCover(url = song.cover300, size = 30.dp)
                         Spacer(Modifier.size(8.dp))
                         SearchResultTexts(title = song.name, subtitle = song.singers)

@@ -291,6 +291,9 @@ object SourceManager {
             _state.value = SourceState.Ready(version, from)
             Log.d(TAG, "音乐源就绪 v$version（$from）")
             true
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            // 组合作用域/调用方取消属正常控制流，静默恢复取消语义
+            throw ce
         } catch (t: Throwable) {
             CrashLog.log(t)
             Log.e(TAG, "源加载失败", t)

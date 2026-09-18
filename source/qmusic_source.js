@@ -1,4 +1,4 @@
-//qmu-sig:v1:Nr7u5WBjV8/0lPWGUxtocmmrjvKfjSuqRDpQWplWwXEKbvM59MKQADibO4zdDyETwqAAvg8GF35indDUiO/bAw==
+//qmu-sig:v1:62WdhloZMKvrAQeAaDbsBVMDq1AUoDw/XrxT098mKnfmhCYOFUHKQ5XScqX4ha9rY9AjGE0ba5JhograIKfcDQ==
 /*
  * QQMusicWear 音乐源插件（Web 协议）
  * ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@
  * ---------------------------------------------------------------------------
  */
 
-var SOURCE_VERSION = 6;
+var SOURCE_VERSION = 8;
 
 /** APK 兼容性闸门：宿主 versionCode 低于该值将拒绝加载本源 */
 var MIN_APP_VERSION = 27;
@@ -298,6 +298,20 @@ function parseSong(obj) {
     cover300: coverUrl(albumMid, 300),
     cover500: coverUrl(albumMid, 500)
   };
+}
+
+/** 歌曲条目 -> DTO：兼容直接歌曲对象 / {songInfo:{...}} / {songInfo:"json"} 包装 */
+function parseSongEntry(item) {
+  if (!item || typeof item !== 'object' || item.length !== undefined) return null;
+  var inner = Ob(item, 'songInfo') || Ob(item, 'song_info');
+  if (!inner) {
+    var raw = item['songInfo'] !== undefined ? item['songInfo']
+      : (item['song_info'] !== undefined ? item['song_info'] : null);
+    if (typeof raw === 'string') {
+      try { inner = JSON.parse(raw); } catch (e) { inner = null; }
+    }
+  }
+  return parseSong(inner || item);
 }
 
 /** 按点分路径定位节点 */
@@ -608,6 +622,93 @@ var handlers = {
     return parseSongsLoose(resp, ['songInfoList', 'songList', 'list']);
   },
 
+  /** 歌手歌曲列表（musicu 歌手单曲通道，order=1 按热度；分页） */
+  artistSongs: function (args) {
+    var page = args.page || 1, size = args.size || 30;
+    var resp = musicuCall('music.musichallSinger.SingerSongList', 'GetSingerSongList', {
+      singerMid: args.singerMid,
+      order: 1,
+      page: { index: page, size: size }
+    });
+    var root = Ob(resp, 'req_1') || resp;
+    var data = Ob(root, 'data') || root;
+    var ssl = Ob(data, 'singerSongList') || data;
+    var songList = Ar(ssl, 'songList') || Ar(ssl, 'songlist');
+    var songs = [];
+    if (songList) {
+      for (var i = 0; i < songList.length; i++) {
+        var s = parseSongEntry(songList[i]);
+        if (s) songs.push(s);
+      }
+    }
+    if (!songs.length) {
+      songs = parseSongsLoose(resp, [
+        'req_1.data.singerSongList.songList', 'data.singerSongList.songList', 'singerSongList'
+      ]);
+    }
+    if (!songs.length) {
+      // 主通道失败（如 code 500003）：备用通道 music.singer.SingerSong / GetSingerSong
+      // 响应假定 {code:0, data:{total:..., songList:[{songInfo:{...}}]}}，与歌单详情条目同构
+      try {
+        var alt = musicuCall('music.singer.SingerSong', 'GetSingerSong', {
+          singerMid: args.singerMid,
+          order: 1,
+          begin: (page - 1) * size,
+          num: size
+        });
+        var altRoot = Ob(alt, 'req_1') || alt;
+        var altData = Ob(altRoot, 'data') || altRoot;
+        var altList = Ar(altData, 'songList') || Ar(altData, 'songlist');
+        if (altList) {
+          for (var j = 0; j < altList.length; j++) {
+            var s2 = parseSongEntry(altList[j]);
+            if (s2) songs.push(s2);
+          }
+        }
+        if (!songs.length) {
+          songs = parseSongsLoose(alt, ['req_1.data.songList', 'data.songList', 'songList']);
+        }
+        if (songs.length) {
+          var altTotal = N(altData, 'total');
+          return {
+            songs: songs,
+            hasMore: altTotal > 0 ? (page * size < altTotal) : (songs.length >= size)
+          };
+        }
+      } catch (eAlt) { /* 备用通道无效，按主通道空结果返回 */ }
+    }
+    var total = N(ssl, 'total');
+    return { songs: songs, hasMore: total > 0 ? (page * size < total) : (songs.length >= size) };
+  },
+
+  /** 专辑详情 + 全部歌曲（musicu 专辑通道；不同响应嵌套名可能是 data.GetAlbumDetail / data 直接字段） */
+  albumSongs: function (args) {
+    var resp = musicuCall('music.susicalbum.SusAlbumDetail', 'GetAlbumDetail', {
+      albumMid: args.albumMid
+    });
+    var root = Ob(resp, 'req_1') || resp;
+    var data = Ob(root, 'data') || root;
+    var detail = Ob(data, 'GetAlbumDetail') || data;
+    var album = Ob(detail, 'album') || detail;
+    var albumMid = S(album, 'mid') || S(detail, 'mid') || args.albumMid;
+    var name = S(album, 'albumName') || S(album, 'name') ||
+      S(detail, 'albumName') || S(detail, 'name');
+    var cover = S(album, 'cover') || S(detail, 'cover') || '';
+    if (cover.indexOf('http') !== 0) cover = coverUrl(albumMid, 500);
+    var songList = Ar(detail, 'songList') || Ar(detail, 'songlist') || Ar(detail, 'list');
+    var songs = [];
+    if (songList) {
+      for (var i = 0; i < songList.length; i++) {
+        var s = parseSongEntry(songList[i]);
+        if (s) songs.push(s);
+      }
+    }
+    if (!songs.length) {
+      songs = parseSongsLoose(resp, ['req_1.data.songList', 'data.songList', 'songList', 'list']);
+    }
+    return { name: name, coverUrl: cover, songs: songs };
+  },
+
   /** 歌单广场：移动端音乐厅首页 feed，提取歌单卡（type=500）按栏目分组 */
   musicHallShelves: function (args) {
     var resp = musicuCall('music.musicHall.MusicHallHomePage', 'GetHomePage', {}, mobileComm(cred()));
@@ -731,11 +832,31 @@ var handlers = {
     } catch (e) { return ''; }
   },
 
-  /** 聚合搜索：歌曲 / 歌手 / 歌单（musicu Desktop 主通道 + client_search_cp 兜底） */
+  /** 歌词罗马音（roma=1 请求音译 LRC；无罗马音返回空串。老版本 APK 不会调用此 handler，向后兼容） */
+  lyricRoma: function (args) {
+    try {
+      var param = {
+        crypt: 0, lrc_t: 0, qrc: 0, qrc_t: 0,
+        roma: 1, roma_t: 1,
+        trans: 0, trans_t: 0, needSingingAnnotations: false, type: 1
+      };
+      if (args.songId > 0) param.songId = args.songId; else param.songMid = args.mid;
+      var resp = musicuCall('music.musichallSong.PlayLyricInfo', 'GetPlayLyricInfo', param);
+      return extractLrcField(resp, 'roma');
+    } catch (e) { return ''; }
+  },
+
+  /** 聚合搜索：歌曲 / 歌手 / 歌单（musicu Desktop 主通道 + 移动端备用通道 + client_search_cp 兜底） */
   searchAll: function (args) {
     function legacy(type) {
       return musicuCall('music.search.SearchCgiService', 'DoSearchForQQMusicDesktop', {
         search_type: type, query: args.query, page_num: 1, num_per_page: 15
+      });
+    }
+    function mobile(type) {
+      // 移动端备用通道（真机 Desktop 通道被风控返回空时启用），响应结构与 Desktop 一致
+      return musicuCall('music.search.SearchCgiService', 'DoSearchForQQMusicMobile', {
+        query: args.query, search_type: type, page_num: 1, num_per_page: 15, nqc_flag: 1
       });
     }
     function cp(type) {
@@ -776,13 +897,23 @@ var handlers = {
         try { return parsePlaylistsLoose(b); } catch (e2) { return []; }
       }
     }
-    var legacy0 = legacy(0), cp0 = cp(0);
-    var legacy1 = legacy(1), cp1 = cp(1);
-    var legacy3 = legacy(3), cp3 = cp(3);
+    var legacy0 = legacy(0), legacy1 = legacy(1), legacy3 = legacy(3);
+    var songs = songsOf(legacy0), singers = singersOf(legacy1), playlists = playlistsOf(legacy3);
+    if (!songs.length && !singers.length && !playlists.length) {
+      // 主通道全空（歌曲+歌手+歌单）：先试移动端备用通道
+      var m0 = mobile(0), m1 = mobile(1), m3 = mobile(3);
+      songs = songsOf(m0); singers = singersOf(m1); playlists = playlistsOf(m3);
+    }
+    if (!songs.length && !singers.length && !playlists.length) {
+      // 移动端通道也无效：client_search_cp 兜底
+      songs = songsOf(legacy0, cp(0));
+      singers = singersOf(legacy1, cp(1));
+      playlists = playlistsOf(legacy3, cp(3));
+    }
     return {
-      songs: songsOf(legacy0, cp0),
-      singers: singersOf(legacy1, cp1),
-      playlists: playlistsOf(legacy3, cp3)
+      songs: songs,
+      singers: singers,
+      playlists: playlists
     };
   },
 
