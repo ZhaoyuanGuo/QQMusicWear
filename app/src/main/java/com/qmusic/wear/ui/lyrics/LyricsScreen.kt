@@ -22,12 +22,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -154,33 +160,25 @@ fun LyricsScreen(
                                     animationSpec = tween(220),
                                     label = "lyric_size",
                                 )
-                                // 卡拉OK填充：活动行按行内播放进度从左往右填色；
-                                // AOD/低配模式下退化为纯色（省 GPU，AOD 更省电）
-                                val lineStyle = if (active && !isAmbient && !lowPerf) {
-                                    TextStyle(
-                                        brush = Brush.horizontalGradient(
-                                            colorStops = arrayOf(
-                                                0f to lineColor,
-                                                ui.activeProgress to lineColor,
-                                                ui.activeProgress to lineColor.copy(alpha = 0.32f),
-                                                1f to lineColor.copy(alpha = 0.32f),
-                                            ),
-                                        ),
-                                        shadow = Shadow(
-                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
-                                            blurRadius = 12f,
-                                            offset = Offset.Zero,
-                                        ),
-                                    )
-                                } else {
-                                    TextStyle(
-                                        color = lineColor,
-                                        shadow = if (active) Shadow(
-                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
-                                            blurRadius = 12f,
-                                            offset = Offset.Zero,
-                                        ) else null,
-                                    )
+                                val karaoke = active && !isAmbient && !lowPerf
+                                // 卡拉OK填充（仅活动行）按帧驱动：positionNow 为框架插值的
+                                // 实时位置（state 轮询 500ms 会产生阶梯感），逐帧重算行内进度
+                                var fill by remember(line.timeMs) { mutableStateOf(0f) }
+                                LaunchedEffect(karaoke, line.timeMs) {
+                                    if (!karaoke) {
+                                        fill = 0f
+                                        return@LaunchedEffect
+                                    }
+                                    val endMs = ui.lines.getOrNull(index + 1)?.timeMs ?: (line.timeMs + 1)
+                                    while (true) {
+                                        withFrameNanos {
+                                            val pos = ServiceLocator.player.positionNow()
+                                            fill = if (endMs > line.timeMs) {
+                                                ((pos - line.timeMs).toFloat() / (endMs - line.timeMs))
+                                                    .coerceIn(0f, 1f)
+                                            } else 1f
+                                        }
+                                    }
                                 }
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -188,16 +186,36 @@ fun LyricsScreen(
                                         .fillMaxWidth()
                                         .clickable { ServiceLocator.player.seekTo(line.timeMs) },
                                 ) {
-                                    Text(
-                                        text = line.text,
-                                        fontSize = lineSize.sp,
-                                        fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                                        textAlign = TextAlign.Center,
-                                        style = lineStyle,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 28.dp, vertical = 6.dp),
-                                    )
+                                    if (karaoke) {
+                                        // 卡拉OK模式：暗色底字 + 亮色按行接力覆盖
+                                        KaraokeText(
+                                            text = line.text,
+                                            fill = fill,
+                                            fillColor = lineColor,
+                                            baseColor = lineColor.copy(alpha = 0.32f),
+                                            fontSize = lineSize,
+                                            shadowColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                                        )
+                                    } else {
+                                        // AOD/低配/非活动行：纯色（省 GPU，AOD 更省电）
+                                        Text(
+                                            text = line.text,
+                                            fontSize = lineSize.sp,
+                                            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                                            textAlign = TextAlign.Center,
+                                            style = TextStyle(
+                                                color = lineColor,
+                                                shadow = if (active) Shadow(
+                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                                                    blurRadius = 12f,
+                                                    offset = Offset.Zero,
+                                                ) else null,
+                                            ),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 28.dp, vertical = 6.dp),
+                                        )
+                                    }
                                     // 罗马音：原文行下方小字（无罗马音的行不占位）
                                     ui.roma[index]?.let { r ->
                                         Text(
@@ -263,5 +281,79 @@ fun LyricsScreen(
                     ),
             )
         }
+    }
+}
+
+/**
+ * 卡拉OK逐行填充文本。
+ *
+ * 不能用整段 Brush.horizontalGradient：英文长句换行后每个视觉行都会按同一
+ * 横向比例同时填色（用户看到的「多行同时变绿」）。这里改为按视觉行宽度
+ * 接力分配填充预算（第一行填满才开始填第二行，行内从左往右逐字推进）：
+ * 底层暗色完整文本 + 上层亮色文本按各行区域 clip 后显示。
+ */
+@Composable
+private fun KaraokeText(
+    text: String,
+    fill: Float,
+    fillColor: Color,
+    baseColor: Color,
+    fontSize: Float,
+    shadowColor: Color,
+) {
+    var layout by remember(text) { mutableStateOf<TextLayoutResult?>(null) }
+    val style = TextStyle(
+        shadow = Shadow(color = shadowColor, blurRadius = 12f, offset = Offset.Zero),
+    )
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 28.dp, vertical = 6.dp),
+    ) {
+        // 底层：未填充部分（暗色）
+        Text(
+            text = text,
+            fontSize = fontSize.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            style = style.copy(color = baseColor),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        // 覆盖层：已填充部分（亮色，按行区域裁剪）
+        Text(
+            text = text,
+            fontSize = fontSize.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            style = style.copy(color = fillColor),
+            onTextLayout = { layout = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .drawWithContent {
+                    val l = layout ?: return@drawWithContent // 首帧未布局时先不画，避免整行闪绿
+                    val widths = (0 until l.lineCount)
+                        .map { l.getLineRight(it) - l.getLineLeft(it) }
+                    val budget = fill.coerceIn(0f, 1f) * widths.sum()
+                    val path = Path()
+                    var acc = 0f
+                    for (i in widths.indices) {
+                        val w = widths[i]
+                        val remain = budget - acc
+                        acc += w
+                        if (remain <= 0f) break
+                        val top = l.getLineTop(i)
+                        val bottom = l.getLineBottom(i)
+                        if (remain >= w) {
+                            // 该行已填满：整行全宽裁剪
+                            path.addRect(Rect(0f, top, size.width, bottom))
+                        } else {
+                            // 该行填充中：从该行左缘按剩余预算推进
+                            path.addRect(Rect(l.getLineLeft(i), top, l.getLineLeft(i) + remain, bottom))
+                        }
+                    }
+                    if (path.isEmpty) return@drawWithContent
+                    clipPath(path) { this@drawWithContent.drawContent() }
+                },
+        )
     }
 }

@@ -250,16 +250,32 @@ class PlayerConnection(
         }
     }
 
+    /**
+     * 实时播放位置（框架侧插值，毫秒）。
+     * state 轮询间隔 500ms，直接读会产生阶梯感；卡拉OK填充等需要平滑进度的
+     * 场景应使用本方法按帧读取。
+     */
+    fun positionNow(): Long {
+        val c = controller ?: return state.value.positionMs
+        return runCatching { c.currentPosition }.getOrDefault(state.value.positionMs)
+    }
+
     private fun startPolling(c: MediaController) {
         scope.launch {
             while (true) {
                 publish(c)
                 // 播放中每 5 秒快照一次进度，进程被杀也能恢复到最近位置
+                // （序列化走 IO 线程，避免主线程周期性抖动）
                 if (c.isPlaying && !restoring && currentQueue.isNotEmpty()) {
                     val now = System.currentTimeMillis()
                     if (now - lastPersistMs >= 5000) {
                         lastPersistMs = now
-                        queueStore.save(currentQueue, c.currentMediaItemIndex, c.currentPosition)
+                        val queueSnapshot = currentQueue.toList()
+                        val index = c.currentMediaItemIndex
+                        val positionMs = c.currentPosition
+                        scope.launch(Dispatchers.IO) {
+                            queueStore.save(queueSnapshot, index, positionMs)
+                        }
                     }
                 }
                 delay(500)
