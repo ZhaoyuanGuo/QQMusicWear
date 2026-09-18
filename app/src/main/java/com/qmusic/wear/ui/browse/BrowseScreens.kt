@@ -44,7 +44,7 @@ private const val ARTIST_PAGE_SIZE = 30
 
 /** 音乐源插件是否具备歌手/专辑能力（v7 起新增 artistSongs/albumSongs/lyricRoma，v8 起补备用通道） */
 internal fun staleSourceHint(): String =
-    if (com.qmusic.wear.data.source.SourceManager.currentVersion() < 8) {
+    if (com.qmusic.wear.data.source.SourceManager.currentVersion() < 9) {
         "音乐源版本过旧，请到「设置 → 更新音乐源」升级后重试"
     } else {
         ""

@@ -1,4 +1,4 @@
-//qmu-sig:v1:62WdhloZMKvrAQeAaDbsBVMDq1AUoDw/XrxT098mKnfmhCYOFUHKQ5XScqX4ha9rY9AjGE0ba5JhograIKfcDQ==
+//qmu-sig:v1:zOnSsbhIaB0stOXcZHwIS9Yoz9T2nZ+Dcy0XDzyhpn/uFpKONodzAydnU9HquuE2enuLvJdlgo3iLTwXZ7gdCw==
 /*
  * QQMusicWear 音乐源插件（Web 协议）
  * ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@
  * ---------------------------------------------------------------------------
  */
 
-var SOURCE_VERSION = 8;
+var SOURCE_VERSION = 9;
 
 /** APK 兼容性闸门：宿主 versionCode 低于该值将拒绝加载本源 */
 var MIN_APP_VERSION = 27;
@@ -846,17 +846,11 @@ var handlers = {
     } catch (e) { return ''; }
   },
 
-  /** 聚合搜索：歌曲 / 歌手 / 歌单（musicu Desktop 主通道 + 移动端备用通道 + client_search_cp 兜底） */
+  /** 聚合搜索：歌曲 / 歌手 / 歌单（musicu Desktop 主通道 + client_search_cp 兜底） */
   searchAll: function (args) {
     function legacy(type) {
       return musicuCall('music.search.SearchCgiService', 'DoSearchForQQMusicDesktop', {
         search_type: type, query: args.query, page_num: 1, num_per_page: 15
-      });
-    }
-    function mobile(type) {
-      // 移动端备用通道（真机 Desktop 通道被风控返回空时启用），响应结构与 Desktop 一致
-      return musicuCall('music.search.SearchCgiService', 'DoSearchForQQMusicMobile', {
-        query: args.query, search_type: type, page_num: 1, num_per_page: 15, nqc_flag: 1
       });
     }
     function cp(type) {
@@ -897,23 +891,13 @@ var handlers = {
         try { return parsePlaylistsLoose(b); } catch (e2) { return []; }
       }
     }
-    var legacy0 = legacy(0), legacy1 = legacy(1), legacy3 = legacy(3);
-    var songs = songsOf(legacy0), singers = singersOf(legacy1), playlists = playlistsOf(legacy3);
-    if (!songs.length && !singers.length && !playlists.length) {
-      // 主通道全空（歌曲+歌手+歌单）：先试移动端备用通道
-      var m0 = mobile(0), m1 = mobile(1), m3 = mobile(3);
-      songs = songsOf(m0); singers = singersOf(m1); playlists = playlistsOf(m3);
-    }
-    if (!songs.length && !singers.length && !playlists.length) {
-      // 移动端通道也无效：client_search_cp 兜底
-      songs = songsOf(legacy0, cp(0));
-      singers = singersOf(legacy1, cp(1));
-      playlists = playlistsOf(legacy3, cp(3));
-    }
+    var legacy0 = legacy(0), cp0 = cp(0);
+    var legacy1 = legacy(1), cp1 = cp(1);
+    var legacy3 = legacy(3), cp3 = cp(3);
     return {
-      songs: songs,
-      singers: singers,
-      playlists: playlists
+      songs: songsOf(legacy0, cp0),
+      singers: singersOf(legacy1, cp1),
+      playlists: playlistsOf(legacy3, cp3)
     };
   },
 

@@ -12,12 +12,12 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -48,8 +48,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.wear.compose.material3.Button
-import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
@@ -157,14 +155,16 @@ fun MineOverlay(
                 .padding(horizontal = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(10.dp))
-            PageTitle("我的")
-            Spacer(Modifier.height(8.dp))
-
             when {
                 // 主列表：搜索栏与搜索历史放进列表，随内容滚动（往下滑即跟随上移，不再悬浮）
+                // 结果页不放页标题：省出顶部空间给结果列表
                 search.query.isBlank() -> Box(Modifier.weight(1f)) {
-                    MineTabs(
+                    Column(Modifier.fillMaxSize()) {
+                        Spacer(Modifier.height(10.dp))
+                        PageTitle("我的")
+                        Spacer(Modifier.height(8.dp))
+                        Box(Modifier.weight(1f)) {
+                            MineTabs(
                         ui = ui,
                         recentCount = recent.size,
                         sessionBad = sessionBad,
@@ -178,11 +178,14 @@ fun MineOverlay(
                         onOpenPlaylist = onOpenPlaylist,
                         onOpenDownloads = onOpenDownloads,
                         onOpenSettings = onOpenSettings,
-                    )
+                        )
+                        }
+                    }
                 }
 
                 search.searching -> Box(Modifier.weight(1f)) {
                     Column(Modifier.fillMaxSize()) {
+                        Spacer(Modifier.height(6.dp))
                         // 结果页搜索栏固定顶部，便于修改关键词
                         MineSearchField(
                             query = search.query,
@@ -198,7 +201,7 @@ fun MineOverlay(
                                 typing = false
                             }
                         }
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(6.dp))
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
                         }
@@ -207,6 +210,7 @@ fun MineOverlay(
 
                 else -> Box(Modifier.weight(1f)) {
                     Column(Modifier.fillMaxSize()) {
+                        Spacer(Modifier.height(6.dp))
                         MineSearchField(
                             query = search.query,
                             onQueryChange = { typing = true; vm.onQueryChange(it) },
@@ -220,7 +224,7 @@ fun MineOverlay(
                                 typing = false
                             }
                         }
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(6.dp))
                         SearchResults(
                             result = search.result ?: SearchResult(),
                             onPlaySong = { song ->
@@ -690,7 +694,7 @@ private fun SearchResults(
                 verticalArrangement = Arrangement.spacedBy(5.dp),
                 modifier = Modifier.fillMaxSize().rotaryList(searchListState),
             ) {
-                item { ListHeader2("播放全部") { onPlayAll(result.songs) } }
+                item { ListHeader2("歌曲") { onPlayAll(result.songs) } }
                 items(result.songs) { song ->
                     GlassRow(
                         onClick = { onPlaySong(song) },
@@ -706,7 +710,7 @@ private fun SearchResults(
     }
 }
 
-/** 搜索分区切换片（选中=主题色底，未选中=玻璃底） */
+/** 搜索分区切换片（选中=主题色底，未选中=玻璃底）：紧凑胶囊，压低高度给结果列表让位 */
 @Composable
 private fun ResultTab(
     label: String,
@@ -715,22 +719,29 @@ private fun ResultTab(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Button(
-        onClick = onClick,
-        colors = if (selected) {
-            ButtonDefaults.buttonColors()
-        } else {
-            ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f),
-                contentColor = MaterialTheme.colorScheme.onSurface,
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .heightIn(min = 26.dp)
+            .clip(RoundedCornerShape(50))
+            .background(
+                if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f)
+                },
             )
-        },
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-        modifier = modifier,
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
     ) {
         Text(
             if (count > 0) "$label $count" else label,
             style = MaterialTheme.typography.labelSmall,
+            color = if (selected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
             maxLines = 1,
         )
     }
