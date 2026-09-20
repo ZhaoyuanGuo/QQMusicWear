@@ -36,6 +36,9 @@ object ServiceLocator {
 
     private lateinit var appContext: Context
 
+    /** 启动初始化失败记录：MainActivity 据此展示诊断页而非无声闪退 */
+    var startupError: Throwable? = null
+
     lateinit var credentialStore: CredentialStore
         private set
     lateinit var settingsStore: SettingsStore
@@ -139,6 +142,9 @@ object ServiceLocator {
 
 /** 崩溃/未捕获异常落盘，主页展示摘要便于定位 */
 object CrashLog {
+    private const val PREFS = "qmusic_crash"
+    private const val KEY_UNREAD = "unread_fatal"
+
     private lateinit var context: Context
 
     fun init(context: Context) {
@@ -148,6 +154,24 @@ object CrashLog {
     fun log(e: Throwable) {
         // 协程取消（如组合作用域退场）是正常控制流，不是崩溃
         if (e is kotlinx.coroutines.CancellationException) return
+        appendCrash(e)
+    }
+
+    /**
+     * 未捕获的致命崩溃：落盘 + 打「未读」标记（commit 同步写盘，进程被杀也不丢）。
+     * 下次启动由 MainActivity 用原生诊断页展示日志，用户可复制反馈。
+     */
+    fun markFatal(e: Throwable) {
+        appendCrash(e)
+        runCatching {
+            if (CrashLog::context.isInitialized) {
+                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .edit().putBoolean(KEY_UNREAD, true).commit()
+            }
+        }
+    }
+
+    private fun appendCrash(e: Throwable) {
         runCatching {
             if (CrashLog::context.isInitialized) {
                 java.io.File(context.filesDir, "crash.log")
@@ -155,6 +179,16 @@ object CrashLog {
             }
         }
     }
+
+    /** 读走上次致命崩溃日志（有标记才返回，读完清除标记）；无则返回 null */
+    fun consumeUnreadFatal(): String? = runCatching {
+        if (!CrashLog::context.isInitialized) return null
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(KEY_UNREAD, false)) return null
+        prefs.edit().putBoolean(KEY_UNREAD, false).commit()
+        java.io.File(context.filesDir, "crash.log").takeIf { it.exists() }
+            ?.readText()?.takeLast(6000)
+    }.getOrNull()
 }
 
 class QMusicApp : Application(), SingletonImageLoader.Factory {
@@ -163,10 +197,17 @@ class QMusicApp : Application(), SingletonImageLoader.Factory {
         // 未捕获异常落盘后交回系统，避免闪退无迹可循
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
-            CrashLog.log(e)
+            CrashLog.markFatal(e)
             previous?.uncaughtException(t, e)
         }
-        ServiceLocator.init(this)
+        CrashLog.init(this)
+        try {
+            ServiceLocator.init(this)
+        } catch (t: Throwable) {
+            // 初始化失败不无声闪退：记录后由 MainActivity 展示诊断页
+            ServiceLocator.startupError = t
+            CrashLog.log(t)
+        }
     }
 
     /**

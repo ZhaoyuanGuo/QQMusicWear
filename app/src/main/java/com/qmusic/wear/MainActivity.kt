@@ -96,23 +96,101 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // AOD 观察依赖 wearable 共享库（com.google.android.wearable）；
-        // 缺库环境（如非手表模拟器）直接跳过注册，否则启动即抛 IllegalStateException
-        if (hasWearableSharedLibrary()) {
-            lifecycle.addObserver(AmbientLifecycleObserver(this, ambientCallback))
+        // 上次运行发生未捕获崩溃：先用原生诊断页展示日志（可复制），避免反复闪退无迹可循
+        val lastCrash = CrashLog.consumeUnreadFatal()
+        if (lastCrash != null) {
+            showCrashReport(lastCrash, showContinue = true)
+            return
         }
-        setContent {
-            QMusicTheme {
-                // 低配置设备模式全局下发（各页据此关特效/砍动画）
-                val lowPerf by ServiceLocator.settingsStore.lowPerfFlow.collectAsStateWithLifecycle()
-                CompositionLocalProvider(
-                    LocalIsAmbient provides isAmbientState.value,
-                    LocalLowPerf provides lowPerf,
-                ) {
-                    AppRoot()
+        startApp()
+    }
+
+    private fun startApp() {
+        // Application 初始化失败：无法正常进入应用，展示初始化错误供反馈
+        ServiceLocator.startupError?.let {
+            showCrashReport(it.stackTraceToString(), showContinue = false)
+            return
+        }
+        try {
+            // AOD 观察依赖 wearable 共享库（com.google.android.wearable）；
+            // 缺库环境（如非手表模拟器）直接跳过注册，否则启动即抛 IllegalStateException
+            if (hasWearableSharedLibrary()) {
+                lifecycle.addObserver(AmbientLifecycleObserver(this, ambientCallback))
+            }
+            setContent {
+                QMusicTheme {
+                    // 低配置设备模式全局下发（各页据此关特效/砍动画）
+                    val lowPerf by ServiceLocator.settingsStore.lowPerfFlow.collectAsStateWithLifecycle()
+                    CompositionLocalProvider(
+                        LocalIsAmbient provides isAmbientState.value,
+                        LocalLowPerf provides lowPerf,
+                    ) {
+                        AppRoot()
+                    }
                 }
             }
+        } catch (t: Throwable) {
+            // 同步组合崩溃：落盘并展示诊断页，让用户能把日志反馈出来
+            CrashLog.log(t)
+            showCrashReport(t.stackTraceToString(), showContinue = false)
         }
+    }
+
+    /**
+     * 启动崩溃诊断页：纯系统控件实现（Compose 崩溃时也能正常渲染），
+     * 支持一键复制日志粘贴反馈；「继续启动」仅用于上次崩溃的瞬时性问题。
+     */
+    private fun showCrashReport(detail: String, showContinue: Boolean) {
+        val d = resources.displayMetrics.density
+        val pad = (16 * d).toInt()
+        val col = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, (24 * d).toInt(), pad, (24 * d).toInt())
+        }
+        col.addView(android.widget.TextView(this).apply {
+            text = "启动异常 · 请截图反馈"
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 16f
+        })
+        col.addView(android.widget.TextView(this).apply {
+            text = "点「复制日志」后粘贴发给开发者"
+            setTextColor(android.graphics.Color.LTGRAY)
+            textSize = 12f
+            setPadding(0, (6 * d).toInt(), 0, (10 * d).toInt())
+        })
+        col.addView(android.widget.TextView(this).apply {
+            text = detail
+            setTextColor(android.graphics.Color.LTGRAY)
+            textSize = 9f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextIsSelectable(true)
+        }, android.widget.LinearLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { bottomMargin = (12 * d).toInt() })
+        col.addView(android.widget.Button(this).apply {
+            text = "复制日志"
+            setOnClickListener {
+                runCatching {
+                    val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("qmusic_crash", detail))
+                    android.widget.Toast.makeText(
+                        context,
+                        "已复制，请粘贴发给开发者",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+        })
+        if (showContinue) {
+            col.addView(android.widget.Button(this).apply {
+                text = "继续启动"
+                setOnClickListener { startApp() }
+            })
+        }
+        val scroll = android.widget.ScrollView(this)
+        scroll.addView(col)
+        setContentView(scroll)
     }
 }
 
