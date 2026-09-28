@@ -435,6 +435,7 @@ fun GlassRow(
 fun GlassPanel(
     modifier: Modifier = Modifier,
     corner: Dp = 20.dp,
+    horizontalAlignment: Alignment.Horizontal = Alignment.Start,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
@@ -444,6 +445,7 @@ fun GlassPanel(
             .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f))
             .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(corner))
             .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalAlignment = horizontalAlignment,
         content = content,
     )
 }
@@ -745,13 +747,11 @@ fun qmRotarySnap(state: ScalingLazyListState): RotaryScrollableBehavior =
  */
 @Composable
 fun Modifier.rotaryCustom(behavior: RotaryScrollableBehavior): Modifier {
-    val focusRequester = androidx.compose.ui.focus.FocusRequester()
+    val focusRequester = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
     androidx.compose.runtime.LaunchedEffect(Unit) { focusRequester.requestFocus() }
-    return then(
-        rotaryScrollable(
-            behavior = behavior,
-            focusRequester = focusRequester,
-        ),
+    return rotaryScrollable(
+        behavior = behavior,
+        focusRequester = focusRequester,
     )
 }
 

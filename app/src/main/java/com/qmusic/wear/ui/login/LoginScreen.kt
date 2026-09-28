@@ -67,17 +67,18 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(2.dp))
             Text(
                 text = stringResource(R.string.login_title),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
-            Spacer(Modifier.height(7.dp))
+            Spacer(Modifier.height(5.dp))
 
             when (ui.status) {
                 QrStatus.Loading, QrStatus.Ready, QrStatus.WaitingScan, QrStatus.ScannedConfirm -> {
-                    GlassPanel {
+                    // 居中显示：GlassPanel 内部默认靠左，这里显式居中避免二维码偏移
+                    GlassPanel(horizontalAlignment = Alignment.CenterHorizontally) {
                         val bytes = ui.qrBytes
                         if (bytes != null) {
                             val decoded = runCatching {
@@ -87,14 +88,14 @@ fun LoginScreen(
                                 bitmap = decoded.asImageBitmap(),
                                 contentDescription = "QQ 登录二维码",
                                 modifier = Modifier
-                                    .size(104.dp)
+                                    .size(96.dp)
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(Color.White)
                                     .padding(4.dp),
                             )
                         } else {
                             Box(
-                                Modifier.size(104.dp),
+                                Modifier.size(96.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 androidx.wear.compose.material3.CircularProgressIndicator()
@@ -133,10 +134,10 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(5.dp))
             androidx.wear.compose.material3.Button(
                 onClick = onBack,
-                modifier = Modifier.padding(bottom = 4.dp),
+                modifier = Modifier.padding(bottom = 2.dp),
                 colors = androidx.wear.compose.material3.ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -1,9 +1,7 @@
 package com.qmusic.wear.ui.agreement
 
 import android.app.Activity
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,11 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -31,7 +24,6 @@ import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.ui.components.PageTitle
 import com.qmusic.wear.ui.components.edgeToEdgeContentPadding
 import com.qmusic.wear.ui.theme.LocalIsRoundScreen
-import kotlinx.coroutines.delay
 
 /**
  * 用户协议与免责声明（首次启动强制展示）：
@@ -40,7 +32,6 @@ import kotlinx.coroutines.delay
  *
  * 阅读约束：
  * - 「同意并继续」固定在正文最底部，必须滚动到协议末尾才能点击（确保完整阅读）
- * - 「不再提示」自协议出现起 10 秒倒计时后才可点击
  */
 @Composable
 fun AgreementScreen(
@@ -48,15 +39,6 @@ fun AgreementScreen(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
-
-    // 「不再提示」倒计时（秒）：自协议出现起 10 秒
-    var countdown by remember { mutableIntStateOf(10) }
-    LaunchedEffect(Unit) {
-        while (countdown > 0) {
-            delay(1000)
-            countdown--
-        }
-    }
 
     ScreenScaffold(timeText = { TimeText() }) { contentPadding ->
         Column(
@@ -105,24 +87,11 @@ fun AgreementScreen(
                 Spacer(Modifier.height(10.dp))
             }
 
-            // 固定底栏：不再提示（10 秒倒计时）+ 不同意并退出
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            // 固定底栏：不同意并退出
+            OutlinedButton(
+                onClick = { (context as? Activity)?.finishAffinity() },
             ) {
-                OutlinedButton(
-                    onClick = onAgree,
-                    enabled = countdown == 0,
-                ) {
-                    Text(
-                        if (countdown > 0) "不再提示 ${countdown}s" else "不再提示",
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-                OutlinedButton(
-                    onClick = { (context as? Activity)?.finishAffinity() },
-                ) {
-                    Text("不同意并退出", style = MaterialTheme.typography.labelMedium)
-                }
+                Text("不同意并退出", style = MaterialTheme.typography.labelMedium)
             }
             Spacer(Modifier.height(10.dp))
         }

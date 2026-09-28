@@ -1,8 +1,9 @@
 # QQMusicWear
 
-Wear OS 第三方 QQ 音乐客户端（Jetpack Compose + Media3），为手表圆形小屏打造的完整听歌体验。
+Wear OS 第三方 QQ 音乐客户端（Kotlin + Jetpack Compose for Wear OS + Media3），专为手表小屏打造的完整听歌体验——圆表方表自适应、表冠导航、卡拉OK歌词，一只手、一块表即可完成从发现到播放的全部操作。
 
 [![source-contract](https://github.com/ZhaoyuanGuo/QQMusicWear/actions/workflows/source-contract.yml/badge.svg)](https://github.com/ZhaoyuanGuo/QQMusicWear/actions/workflows/source-contract.yml)
+[![Release](https://img.shields.io/github/v/release/ZhaoyuanGuo/QQMusicWear)](https://github.com/ZhaoyuanGuo/QQMusicWear/releases/latest)
 
 > **⚠️ 免责声明**
 >
@@ -14,13 +15,52 @@ Wear OS 第三方 QQ 音乐客户端（Jetpack Compose + Media3），为手表�
 
 ## 功能特性
 
+**内容发现**
+
 - 推荐卡片首页 / 每日推荐
-- 排行榜、歌单广场、搜索分区
-- 歌词同步显示
-- 红心收藏、最近播放
-- 播放队列管理
+- 排行榜、歌单广场、歌手页、专辑页
+- 搜索分区（歌曲 / 歌手 / 专辑 / 歌单）
+- 红心收藏、最近播放（含本周收听统计）
+
+**播放与下载**
+
+- 音质选择：标准 / 高品质 / 无损 / Hi-Res
+- 播放失败自愈：优先重试本地已下载文件 → 音质逐级降级重试 → 自动跳过下一曲
+- 播放队列管理，队列与播放进度自动持久化，冷启动恢复
 - 批量下载（本地保存，仅供学习研究，请合理期限内自行删除）
-- 睡眠定时
+- 睡眠定时、屏幕常亮 / 播放页不熄屏
+- 常驻系统媒体卡片（Ongoing Activity），播放状态一目了然，点击返回应用
+
+**歌词**
+
+- 逐行接力卡拉OK填充效果
+- 原文 / 翻译 / 罗马音三轨显示
+- 已下载歌曲自动缓存歌词，离线可用
+
+**手表深度适配**
+
+- 圆表 / 方表双布局策略：数据层完全共享，仅 UI 分叉——圆表内容居中 + ScalingLazyColumn 边缘缩放，方表用满矩形空间 + 全宽贴边卡片，可跟随屏幕自动识别或手动切换
+- 表冠导航：播放页转表冠进入队列页，队列页表冠滚动列表，无库内触觉设备（小米手表等）自动补充刻度震动
+- 右侧竖直滚动指示条，半透明轨道 + 白色滑块
+- 6 种播放进度样式（设置 → 显示可预览切换）：屏幕边框描边 / 封面描边 / 液体填充 / 波形刻度 / 点阵进度 / 唱片弧线，默认液体填充
+- 低配置设备模式：一键关闭模糊封面、唱片旋转、动画过渡等视觉效果，流畅优先
+- 启动崩溃诊断：致命崩溃自动落盘并在下次启动展示诊断页，支持一键复制日志反馈
+
+## 系统要求
+
+- **Wear OS 手表**：Wear OS 4+（推荐）
+- **非 Wear OS 手表**：Android 9（API 28）及以上也可运行（如小米手表等，部分功能可能受限）
+- 支持 QQ 扫码登录
+
+## 安装
+
+前往 [Releases](https://github.com/ZhaoyuanGuo/QQMusicWear/releases/latest) 下载最新 APK（如 `QQMusicWear-v2.1.0.apk`），通过 adb 或文件传输安装到手表：
+
+```bash
+adb install QQMusicWear-v2.1.0.apk
+```
+
+首次启动会引导阅读用户协议，并从公开镜像下载音乐源插件（见下文）；若全部镜像不可用，可在门页或设置页「从存储导入」开发者发布的插件文件。
 
 ## 架构：音乐源插件机制
 
@@ -34,12 +74,9 @@ APK 安装包内**不包含任何协议实现**。协议逻辑外置为 JavaScri
 
 插件源码见 [`source/`](source/)，行为契约与签名校验的 CI 门禁见 [`tools/contract-test/`](tools/contract-test/)，插件开发指南见 [`docs/source-plugin-api.md`](docs/source-plugin-api.md)。
 
-## 系统要求
-
-- Wear OS 4+ 手表设备（Android 13 / API 33 及以上）
-- 支持 QQ 扫码登录
-
 ## 构建
+
+环境要求：JDK 17+、Android SDK（compileSdk 36）。
 
 ```bash
 git clone https://github.com/ZhaoyuanGuo/QQMusicWear.git
@@ -47,7 +84,9 @@ cd QQMusicWear
 ./gradlew assembleRelease
 ```
 
-或使用 Android Studio 打开项目直接运行（需 JDK 17+）。
+或使用 Android Studio 打开项目直接运行。产物位于 `app/build/outputs/apk/release/`。
+
+**主要技术栈**：Kotlin、Jetpack Compose for Wear OS（Material 3）、Media3 / ExoPlayer、Coil、Rhino（JS 插件沙箱）、DataStore / SharedPreferences。
 
 ## 使用限制
 

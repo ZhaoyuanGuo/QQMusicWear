@@ -105,7 +105,9 @@ object SourceManager {
         this.credentialProvider = credentialProvider
         this.onSourceEvent = onSourceEvent
         this.appVersionCode = runCatching {
-            context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toInt()
+            val pi = context.packageManager.getPackageInfo(context.packageName, 0)
+            // longVersionCode 为 API 28+ 字段，API 27（如 OPPO Watch）上访问会抛 NoSuchFieldError
+            if (android.os.Build.VERSION.SDK_INT >= 28) pi.longVersionCode.toInt() else pi.versionCode
         }.getOrDefault(0)
         scope.launch { loadCached() }
     }

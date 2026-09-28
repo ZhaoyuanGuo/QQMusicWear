@@ -24,6 +24,11 @@
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.QMusic">
 
+        <!-- 独立手表应用：不依赖配对手机侧 App -->
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
+
         <uses-library
             android:name="com.google.android.wearable"
             android:required="false" />

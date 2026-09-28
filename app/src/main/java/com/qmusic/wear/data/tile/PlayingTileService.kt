@@ -50,6 +50,7 @@ class PlayingTileService : TileService() {
     @Volatile
     private var inlineCover: ByteArray? = null
 
+    @androidx.wear.protolayout.expression.ProtoLayoutExperimental
     override fun onTileRequest(requestParams: TileRequest): ListenableFuture<Tile> {
         val future = SettableFuture.create<Tile>()
         scope.launch {
@@ -81,6 +82,7 @@ class PlayingTileService : TileService() {
     // 磁贴构建
     // ------------------------------------------------------------------
 
+    @androidx.wear.protolayout.expression.ProtoLayoutExperimental
     private suspend fun buildTile(requestParams: TileRequest): Tile {
         val now = ServiceLocator.player.state.value
         val song = now.song ?: return buildEmptyTile()

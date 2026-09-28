@@ -343,24 +343,24 @@ private fun PlayingBars() {
         listOf(0.6f, 1f, 0.8f)
     } else {
         val transition = rememberInfiniteTransition(label = "playing_bars")
-    val h1 by transition.animateFloat(
-        initialValue = 0.2f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(420), RepeatMode.Reverse),
-        label = "bar1",
-    )
-    val h2 by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.2f,
-        animationSpec = infiniteRepeatable(tween(640), RepeatMode.Reverse),
-        label = "bar2",
-    )
-    val h3 by transition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(520, delayMillis = 90), RepeatMode.Reverse),
-        label = "bar3",
-    )
+        val h1 by transition.animateFloat(
+            initialValue = 0.2f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(420), RepeatMode.Reverse),
+            label = "bar1",
+        )
+        val h2 by transition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.2f,
+            animationSpec = infiniteRepeatable(tween(640), RepeatMode.Reverse),
+            label = "bar2",
+        )
+        val h3 by transition.animateFloat(
+            initialValue = 0.4f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(520, delayMillis = 90), RepeatMode.Reverse),
+            label = "bar3",
+        )
         listOf(h1, h2, h3)
     }
     Row(
