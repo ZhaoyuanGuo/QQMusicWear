@@ -148,7 +148,8 @@ object CrashLog {
     private lateinit var context: Context
 
     fun init(context: Context) {
-        this.context = context.applicationContext
+        // 直接持有传入上下文：attachBaseContext 阶段调用时 applicationContext 尚未就绪
+        this.context = context
     }
 
     fun log(e: Throwable) {
@@ -192,15 +193,20 @@ object CrashLog {
 }
 
 class QMusicApp : Application(), SingletonImageLoader.Factory {
-    override fun onCreate() {
-        super.onCreate()
-        // 未捕获异常落盘后交回系统，避免闪退无迹可循
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        // 崩溃接管越早越好：attachBaseContext 早于 ContentProvider（androidx.startup 等）
+        // 与 Application.onCreate，Provider 初始化阶段的崩溃也能落盘，下次启动展示诊断页
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             CrashLog.markFatal(e)
             previous?.uncaughtException(t, e)
         }
-        CrashLog.init(this)
+        CrashLog.init(base)
+    }
+
+    override fun onCreate() {
+        super.onCreate()
         try {
             ServiceLocator.init(this)
         } catch (t: Throwable) {

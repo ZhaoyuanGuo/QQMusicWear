@@ -19,13 +19,14 @@ import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import com.qmusic.wear.ui.components.QmScreenScaffold
+import com.qmusic.wear.ui.components.edgeScalingParams
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.ui.components.PageTitle
 import com.qmusic.wear.ui.components.SongRow
-import com.qmusic.wear.ui.components.rotaryList
+import com.qmusic.wear.ui.components.qmRotarySnap
 import kotlinx.coroutines.launch
 
 /**
@@ -49,19 +50,21 @@ fun DailyScreen(
         if (ui.songs.isEmpty() && !ui.loading) vm.load()
     }
 
-    ScreenScaffold(
+    QmScreenScaffold(
         scrollState = listState,
         timeText = { TimeText() },
     ) { contentPadding ->
         ScalingLazyColumn(
+            scalingParams = edgeScalingParams(),
             state = listState,
+            rotaryScrollableBehavior = qmRotarySnap(listState),
             contentPadding = PaddingValues(
                 top = contentPadding.calculateTopPadding(),
                 bottom = contentPadding.calculateBottomPadding() + 60.dp,
             ),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxSize().rotaryList(listState),
+            modifier = Modifier.fillMaxSize(),
         ) {
             item { PageTitle("每日30首") }
 

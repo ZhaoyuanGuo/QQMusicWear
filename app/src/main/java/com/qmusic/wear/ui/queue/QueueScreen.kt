@@ -9,6 +9,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,9 +40,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.foundation.rotary.RotaryScrollableBehavior
+import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import com.qmusic.wear.ui.components.QmScreenScaffold
+import com.qmusic.wear.ui.components.edgeScalingParams
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import coil3.compose.AsyncImage
@@ -51,7 +56,9 @@ import com.qmusic.wear.data.model.Song
 import com.qmusic.wear.ui.components.EdgeProgressRing
 import com.qmusic.wear.ui.components.SwipeBackBox
 import com.qmusic.wear.ui.components.rememberHaptics
-import com.qmusic.wear.ui.components.rotaryList
+import com.qmusic.wear.ui.components.rotaryCustom
+import com.qmusic.wear.ui.theme.LocalIsRoundScreen
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 /**
@@ -60,6 +67,7 @@ import kotlinx.coroutines.launch
  * - 标题下一条细分隔线
  * - 列表：扁平行 = 圆角封面块 + 歌名/歌手；当前曲目行尾绿色播放动效条
  * - 点按切歌，长按移除出队列；额外叠加我们自己的边缘环形进度条
+ * - 表冠：滚动列表；已在顶部仍向回旋转 → 返回播放页（表冠在播放/队列页间往返）
  */
 @Composable
 fun QueueScreen(
@@ -67,12 +75,44 @@ fun QueueScreen(
 ) {
     val now by ServiceLocator.player.state.collectAsStateWithLifecycle()
     val mode by ServiceLocator.player.playMode.collectAsStateWithLifecycle()
+    // 屏幕形状：圆表头部两侧留防弧边留白，方表收窄用满宽度
+    val isRound = LocalIsRoundScreen.current
+    val headerHPad = if (isRound) 12.dp else 2.dp
     val listState = rememberScalingLazyListState()
     val scope = rememberCoroutineScope()
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val progress = if (now.durationMs > 0) {
         (now.positionMs.toFloat() / now.durationMs).coerceIn(0f, 1f)
     } else 0f
+
+    // 表冠：常规旋转滚动列表（保留 snap 手感）；
+    // 已在顶部仍向回（负方向）旋转 → 返回播放页，与播放页表冠进队列形成往返。
+    val haptics = rememberHaptics()
+    val snapBehavior = RotaryScrollableDefaults.snapBehavior(listState)
+    val crownBehavior = remember(snapBehavior) {
+        object : RotaryScrollableBehavior {
+            var lastBackMs = 0L
+            override suspend fun CoroutineScope.performScroll(
+                timestampMillis: Long,
+                delta: Float,
+                inputDeviceId: Int,
+                orientation: Orientation,
+            ) {
+                val atTop = !listState.canScrollBackward
+                if (delta < 0f && atTop) {
+                    if (timestampMillis - lastBackMs > 900) {
+                        lastBackMs = timestampMillis
+                        haptics.confirm()
+                        onBack()
+                    }
+                    return
+                }
+                with(snapBehavior) {
+                    this@performScroll.performScroll(timestampMillis, delta, inputDeviceId, orientation)
+                }
+            }
+        }
+    }
 
     SwipeBackBox(onBack = onBack) {
         // 磁音队列页没有进度环，这里按需求额外加上我们自己的边缘环形进度条
@@ -82,16 +122,20 @@ fun QueueScreen(
                 .fillMaxSize()
                 .padding(5.dp),
         )
-        ScreenScaffold(
+        QmScreenScaffold(
             scrollState = listState,
             timeText = { TimeText() },
         ) { contentPadding ->
             ScalingLazyColumn(
+                scalingParams = edgeScalingParams(),
                 state = listState,
+                // 自定义表冠行为（顶部回转返回播放页）通过 rotaryCustom 独占处理，
+                // 必须关闭内置表冠支持，否则两套 focusTarget 抢焦点
+                rotaryScrollableBehavior = null,
                 contentPadding = contentPadding,
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.fillMaxSize().rotaryList(listState),
+                modifier = Modifier.fillMaxSize().rotaryCustom(crownBehavior),
             ) {
                 // 头部：模式钮 | 标题+计数 | 定位钮（磁音三段式）
                 item {
@@ -99,7 +143,7 @@ fun QueueScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                            .padding(horizontal = headerHPad, vertical = 4.dp),
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             RoundModeButton(
@@ -251,7 +295,8 @@ private fun QueueRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .combinedClickable(onClick = onClick, onLongClick = onRemove)
-            .padding(horizontal = 16.dp, vertical = 7.dp),
+            // 圆表两侧留防弧边留白；方表收窄让歌名/歌手多显示几个字
+            .padding(horizontal = if (LocalIsRoundScreen.current) 16.dp else 2.dp, vertical = 7.dp),
     ) {
         Box(
             Modifier

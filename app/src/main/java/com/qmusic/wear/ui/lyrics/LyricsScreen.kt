@@ -49,7 +49,9 @@ import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.ui.components.BlurCoverBackground
 import com.qmusic.wear.ui.components.SwipeBackBox
+import com.qmusic.wear.ui.components.edgeToEdgeContentPadding
 import com.qmusic.wear.ui.theme.LocalIsAmbient
+import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 import com.qmusic.wear.ui.theme.LocalLowPerf
 import kotlinx.coroutines.delay
 
@@ -62,6 +64,9 @@ fun LyricsScreen(
     val ui by vm.ui.collectAsStateWithLifecycle()
     val isAmbient = LocalIsAmbient.current
     val lowPerf = LocalLowPerf.current
+    // 屏幕形状：圆表歌词两侧留大防弧边裁切，方表收窄换更多每行字数
+    val isRound = LocalIsRoundScreen.current
+    val lineHPad = if (isRound) 28.dp else 2.dp
 
     val listState = rememberLazyListState()
 
@@ -107,7 +112,7 @@ fun LyricsScreen(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .padding(contentPadding),
+                    .padding(edgeToEdgeContentPadding(contentPadding)),
             ) {
                     if (ui.lines.isEmpty()) {
                         Column(
@@ -143,7 +148,7 @@ fun LyricsScreen(
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 30.dp, vertical = 4.dp),
+                                        .padding(horizontal = if (isRound) 30.dp else 2.dp, vertical = 4.dp),
                                 )
                             }
                             itemsIndexed(ui.lines) { index, line ->
@@ -213,7 +218,7 @@ fun LyricsScreen(
                                             ),
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 28.dp, vertical = 6.dp),
+                                                .padding(horizontal = lineHPad, vertical = 6.dp),
                                         )
                                     }
                                     // 罗马音：原文行下方小字（无罗马音的行不占位）
@@ -227,7 +232,7 @@ fun LyricsScreen(
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 28.dp),
+                                                .padding(horizontal = lineHPad),
                                         )
                                     }
                                     // 译文：原文行下方灰色小字（无翻译的行不占位）
@@ -241,7 +246,7 @@ fun LyricsScreen(
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 28.dp)
+                                                .padding(horizontal = lineHPad)
                                                 .padding(bottom = 6.dp),
                                         )
                                     }
@@ -308,7 +313,8 @@ private fun KaraokeText(
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 28.dp, vertical = 6.dp),
+            // 圆表两侧大留白防弧边裁切；方表收窄让长句少折行
+            .padding(horizontal = if (LocalIsRoundScreen.current) 28.dp else 2.dp, vertical = 6.dp),
     ) {
         // 底层：未填充部分（暗色）
         Text(

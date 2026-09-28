@@ -33,7 +33,9 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.R
 import com.qmusic.wear.ui.components.GlassPanel
+import com.qmusic.wear.ui.components.edgeToEdgeContentPadding
 import com.qmusic.wear.ui.login.LoginUiState.QrStatus
+import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 
 @Composable
 fun LoginScreen(
@@ -54,12 +56,14 @@ fun LoginScreen(
     ScreenScaffold(
         timeText = { TimeText() },
     ) { contentPadding ->
+        // 屏幕形状：圆表两侧留防弧边留白，方表收窄给二维码/文案更多宽度
+        val hPad = if (LocalIsRoundScreen.current) 18.dp else 2.dp
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(contentPadding)
+                .padding(edgeToEdgeContentPadding(contentPadding))
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp),
+                .padding(horizontal = hPad),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {

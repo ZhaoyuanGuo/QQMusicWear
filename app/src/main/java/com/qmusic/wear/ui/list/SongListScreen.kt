@@ -28,13 +28,14 @@ import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import com.qmusic.wear.ui.components.QmScreenScaffold
+import com.qmusic.wear.ui.components.edgeScalingParams
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.ui.components.PlaylistHeader
 import com.qmusic.wear.ui.components.SongRow
-import com.qmusic.wear.ui.components.rotaryList
+import com.qmusic.wear.ui.components.qmRotarySnap
 import kotlinx.coroutines.launch
 
 /** 歌单详情页：支持分页加载（大歌单）、全部下载、长按收藏 */
@@ -56,16 +57,18 @@ fun SongListScreen(
 
     LaunchedEffect(disstid) { vm.load(disstid) }
 
-    ScreenScaffold(
+    QmScreenScaffold(
         scrollState = listState,
         timeText = { TimeText() },
     ) { contentPadding ->
         ScalingLazyColumn(
+            scalingParams = edgeScalingParams(),
             state = listState,
+            rotaryScrollableBehavior = qmRotarySnap(listState),
             contentPadding = contentPadding,
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxSize().rotaryList(listState),
+            modifier = Modifier.fillMaxSize(),
         ) {
             item {
                 PlaylistHeader(

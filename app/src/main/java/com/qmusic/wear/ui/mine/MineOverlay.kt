@@ -23,7 +23,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.wear.compose.foundation.hierarchicalFocusGroup
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.compose.runtime.Composable
@@ -58,14 +60,19 @@ import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.SearchResult
 import com.qmusic.wear.data.model.Song
 import com.qmusic.wear.ui.components.GlassPanel
+import com.qmusic.wear.ui.components.SquareScrollIndicator
+import com.qmusic.wear.ui.components.edgeScalingParams
 import com.qmusic.wear.ui.components.GlassRow
+import com.qmusic.wear.ui.components.qmRotarySnap
 import com.qmusic.wear.ui.components.rememberHaptics
-import com.qmusic.wear.ui.components.rotaryList
 import com.qmusic.wear.ui.components.PageTitle
 import com.qmusic.wear.ui.components.PlaylistRow
 import com.qmusic.wear.ui.components.RoundCover
 import com.qmusic.wear.ui.components.SectionHeader
 import com.qmusic.wear.ui.components.SquareCover
+import com.qmusic.wear.ui.components.edgeListPadding
+import com.qmusic.wear.ui.components.edgeScalingParams
+import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 
 /**
  * 「我的」页（每日推荐页右滑出现）：
@@ -121,11 +128,19 @@ fun MineOverlay(
     var typing by remember { mutableStateOf(false) }
     val fieldFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    // 列表状态提升到顶层：指示条/刻度振动需要跟随当前活跃列表（主列表 或 搜索结果）
+    val mineListState = rememberScalingLazyListState()
+    val searchListState = rememberScalingLazyListState()
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.985f))
+            // 焦点组：与下层首页列表互斥持焦（打开时拿走表冠焦点，关闭时让首页组重新拿回）
+            .hierarchicalFocusGroup(active = true)
+            // 纯黑底（OLED 不发光）：必须全不透明，否则下层页面的模糊封面会透出来
+            .background(MaterialTheme.colorScheme.background)
+            // 圆表两侧防弧边留白；方表收窄用满 245dp 级别的窄宽度
+            .padding(horizontal = if (LocalIsRoundScreen.current) 12.dp else 2.dp)
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onHorizontalDrag = { change, amount ->
@@ -151,8 +166,7 @@ fun MineOverlay(
     ) {
         Column(
             Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp),
+                .fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             when {
@@ -165,9 +179,11 @@ fun MineOverlay(
                         Spacer(Modifier.height(8.dp))
                         Box(Modifier.weight(1f)) {
                             MineTabs(
+                        listState = mineListState,
                         ui = ui,
                         recentCount = recent.size,
                         sessionBad = sessionBad,
+                        logged = cred.isLogged,
                         query = search.query,
                         onQueryChange = { typing = true; vm.onQueryChange(it) },
                         onVoiceSearch = launchVoice,
@@ -226,6 +242,7 @@ fun MineOverlay(
                         }
                         Spacer(Modifier.height(6.dp))
                         SearchResults(
+                            listState = searchListState,
                             result = search.result ?: SearchResult(),
                             onPlaySong = { song ->
                                 // 点播加入队列：追加到当前队列尾部并播放该曲（其余歌曲不动）
@@ -257,6 +274,24 @@ fun MineOverlay(
                         )
                     }
                 }
+            }
+        }
+
+        // 方表右侧滚动指示条：跟随当前活跃列表（主列表 / 搜索结果；搜索中不显示）
+        val activeListState = when {
+            search.query.isBlank() -> mineListState
+            search.searching -> null
+            else -> searchListState
+        }
+        activeListState?.let { st ->
+            if (!LocalIsRoundScreen.current) {
+                SquareScrollIndicator(
+                    st,
+                    Modifier
+                        .align(Alignment.CenterEnd)
+                        // 根 Box 已有 2dp 横向 padding，补 1dp 使指示条与 QmScreenScaffold 对齐（距屏边 3dp）
+                        .padding(end = 1.dp),
+                )
             }
         }
     }
@@ -333,9 +368,11 @@ private fun MineSearchField(
 /** 「我的」页主体：搜索栏/历史 → 异常提示 → 我的喜欢 → 最近播放 → 我的歌单 → 下载管理 → 设置 */
 @Composable
 private fun MineTabs(
+    listState: ScalingLazyListState,
     ui: MineUiState,
     recentCount: Int,
     sessionBad: Boolean,
+    logged: Boolean,
     query: String,
     onQueryChange: (String) -> Unit,
     onVoiceSearch: () -> Unit,
@@ -349,12 +386,14 @@ private fun MineTabs(
 ) {
     // 听歌统计（本地数据）
     val stats = ServiceLocator.playStats.weekStats.collectAsStateWithLifecycle().value
-    // ScalingLazyColumn：圆屏自适应缩放 + 居中锚点，与首页/队列页滚动体验一致
-    val listState = rememberScalingLazyListState()
+    // ScalingLazyColumn：圆屏自适应缩放 + 居中锚点，与首页/队列页滚动体验一致；
+    // 表冠滚动走内置支持（外挂 rotaryScrollable 会与内置焦点协调抢焦点，已废弃）
     ScalingLazyColumn(
         Modifier
-            .fillMaxWidth()
-            .rotaryList(listState),
+            .fillMaxWidth(),
+        rotaryScrollableBehavior = qmRotarySnap(listState),
+        contentPadding = edgeListPadding(),
+        scalingParams = edgeScalingParams(),
         state = listState,
         verticalArrangement = Arrangement.spacedBy(6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -400,7 +439,8 @@ private fun MineTabs(
         }
 
         // 未登录提示：登录入口在设置里
-        if (ui.profile == null && !sessionBad) {
+        // （按本地凭据判断而非 profile 加载结果——profile 接口失败时账号仍是登录态，不能误报）
+        if (!logged) {
             item {
                 GlassRow(onClick = onOpenSettings) {
                     Icon(
@@ -589,6 +629,7 @@ private fun MineTabs(
 
 @Composable
 private fun SearchResults(
+    listState: ScalingLazyListState,
     result: SearchResult,
     onPlaySong: (Song) -> Unit,
     onPlayAll: (List<Song>) -> Unit,
@@ -617,7 +658,6 @@ private fun SearchResults(
     )
     var sel by remember(result) { mutableStateOf(0) }
     val selIndex = if (sel >= tabs.size) 0 else sel
-    val searchListState = rememberScalingLazyListState()
 
     Column(Modifier.fillMaxSize()) {
         // 分区选择条
@@ -651,10 +691,13 @@ private fun SearchResults(
 
         when (current.label) {
             "歌手" -> ScalingLazyColumn(
-                state = searchListState,
+                state = listState,
+                rotaryScrollableBehavior = qmRotarySnap(listState),
+                contentPadding = edgeListPadding(),
+                scalingParams = edgeScalingParams(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.fillMaxSize().rotaryList(searchListState),
+                modifier = Modifier.fillMaxSize(),
             ) {
                 items(result.singers) { singer ->
                     GlassRow(onClick = { onOpenArtist(singer) }) {
@@ -671,10 +714,13 @@ private fun SearchResults(
             }
 
             "歌单" -> ScalingLazyColumn(
-                state = searchListState,
+                state = listState,
+                rotaryScrollableBehavior = qmRotarySnap(listState),
+                contentPadding = edgeListPadding(),
+                scalingParams = edgeScalingParams(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.fillMaxSize().rotaryList(searchListState),
+                modifier = Modifier.fillMaxSize(),
             ) {
                 items(result.playlists) { pl ->
                     GlassRow(onClick = { onOpenPlaylist(pl) }) {
@@ -689,10 +735,13 @@ private fun SearchResults(
             }
 
             else -> ScalingLazyColumn(
-                state = searchListState,
+                contentPadding = edgeListPadding(),
+                scalingParams = edgeScalingParams(),
+                state = listState,
+                rotaryScrollableBehavior = qmRotarySnap(listState),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.fillMaxSize().rotaryList(searchListState),
+                modifier = Modifier.fillMaxSize(),
             ) {
                 item { ListHeader2("歌曲") { onPlayAll(result.songs) } }
                 items(result.songs) { song ->

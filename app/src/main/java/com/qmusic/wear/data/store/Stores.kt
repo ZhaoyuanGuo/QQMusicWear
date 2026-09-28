@@ -6,7 +6,9 @@ import com.qmusic.wear.data.api.long
 import com.qmusic.wear.data.api.str
 import com.qmusic.wear.data.model.PlayMode
 import com.qmusic.wear.data.model.Playlist
+import com.qmusic.wear.data.model.ProgressStyle
 import com.qmusic.wear.data.model.Quality
+import com.qmusic.wear.data.model.UiShape
 import com.qmusic.wear.data.model.Song
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -111,6 +113,32 @@ class SettingsStore(context: Context) {
         _lowPerfFlow.value = enabled
     }
 
+    /** 显示形态（方表/圆表 UI）：覆盖系统屏幕形状识别，驱动全 app 两套布局 */
+    private val _uiShapeFlow = MutableStateFlow(readUiShape())
+    val uiShapeFlow: StateFlow<UiShape> = _uiShapeFlow.asStateFlow()
+
+    fun setUiShape(shape: UiShape) {
+        prefs.edit().putString(KEY_UI_SHAPE, shape.name).apply()
+        _uiShapeFlow.value = shape
+    }
+
+    /** 播放页进度样式（六选一，默认液体填充） */
+    private val _progressStyleFlow = MutableStateFlow(readProgressStyle())
+    val progressStyleFlow: StateFlow<ProgressStyle> = _progressStyleFlow.asStateFlow()
+
+    fun setProgressStyle(style: ProgressStyle) {
+        prefs.edit().putString(KEY_PROGRESS_STYLE, style.name).apply()
+        _progressStyleFlow.value = style
+    }
+
+    private fun readUiShape(): UiShape =
+        runCatching { UiShape.valueOf(prefs.getString(KEY_UI_SHAPE, UiShape.AUTO.name)!!) }
+            .getOrDefault(UiShape.AUTO)
+
+    private fun readProgressStyle(): ProgressStyle =
+        runCatching { ProgressStyle.valueOf(prefs.getString(KEY_PROGRESS_STYLE, ProgressStyle.LIQUID.name)!!) }
+            .getOrDefault(ProgressStyle.LIQUID)
+
     private fun readPlayMode(): PlayMode =
         runCatching { PlayMode.valueOf(prefs.getString(KEY_PLAY_MODE, PlayMode.SEQUENTIAL.name)!!) }
             .getOrDefault(PlayMode.SEQUENTIAL)
@@ -144,6 +172,8 @@ class SettingsStore(context: Context) {
         const val KEY_LAUNCH_TOAST = "launch_toast"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_LOW_PERF = "low_perf"
+        const val KEY_UI_SHAPE = "ui_shape"
+        const val KEY_PROGRESS_STYLE = "progress_style"
     }
 }
 

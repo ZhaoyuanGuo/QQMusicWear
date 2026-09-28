@@ -10,10 +10,10 @@ android {
 
     defaultConfig {
         applicationId = "com.qmusic.wear"
-        minSdk = 33
+        minSdk = 28
         targetSdk = 36
-        versionCode = 36
-        versionName = "2.0.1"
+        versionCode = 37
+        versionName = "2.1.0"
     }
 
     buildTypes {

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 方表（非圆形屏幕）：禁用系统级右滑关闭 Activity——
+         圆表的系统滑动 dismiss 在方表上会让任何右滑手势直接退出应用，
+         关闭后由应用内 SwipeBackBox（右滑返回上一级）接管手势 -->
+    <style name="Theme.QMusic" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/qm_window_background</item>
+        <item name="android:windowSwipeToDismiss">false</item>
+    </style>
+</resources>

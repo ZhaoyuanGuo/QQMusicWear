@@ -2,6 +2,7 @@ package com.qmusic.wear.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,7 +17,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -32,27 +37,31 @@ import androidx.wear.compose.material3.AlertDialog
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import com.qmusic.wear.ui.components.QmScreenScaffold
+import com.qmusic.wear.ui.components.edgeScalingParams
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import coil3.compose.AsyncImage
 import com.qmusic.wear.R
 import com.qmusic.wear.ServiceLocator
+import com.qmusic.wear.data.model.ProgressStyle
 import com.qmusic.wear.data.model.Quality
+import com.qmusic.wear.data.model.UiShape
 import com.qmusic.wear.data.player.SleepTimer
 import com.qmusic.wear.util.formatBytes
 import com.qmusic.wear.ui.components.GlassPanel
 import com.qmusic.wear.ui.components.GlassRow
 import com.qmusic.wear.ui.components.PageTitle
 import com.qmusic.wear.ui.components.SectionHeader
-import com.qmusic.wear.ui.components.rotaryList
+import com.qmusic.wear.ui.components.qmRotarySnap
+import com.qmusic.wear.ui.player.ProgressStylePreview
 import com.qmusic.wear.util.msTo_mmss
 
 /**
- * 设置页（“我的”页二级界面）：
- * - 账号与登录：未登录显示登录入口，已登录显示头像昵称 + 退出登录
- * - 播放音质 / 下载音质（相互独立）
- * - 睡眠定时：到时自动暂停
+ * 设置页（“我的”页二级界面），三选项卡拆分避免单列过长：
+ * - 通用：账号登录 / 存储 / 音乐源 / 日志 / 开屏提示 / 关于
+ * - 显示：屏幕常亮 / 低配置模式 / 界面形态（方表圆表）/ 播放进度样式
+ * - 播放设置：播放音质 / 下载音质 / 睡眠定时
  */
 @Composable
 fun SettingsScreen(
@@ -63,8 +72,12 @@ fun SettingsScreen(
     val profile = ui.profile
     val listState = rememberScalingLazyListState()
     val sleepRemaining by SleepTimer.remainingSec.collectAsStateWithLifecycle()
+    // 选项卡：0 通用 / 1 显示 / 2 播放设置（显示排在播放设置前）
+    var tab by rememberSaveable { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) { vm.load() }
+    // 切换选项卡时回到列表顶部，避免停留在上一页的滚动位置
+    LaunchedEffect(tab) { runCatching { listState.scrollToItem(0) } }
 
     if (ui.showLogoutConfirm) {
         AlertDialog(
@@ -109,19 +122,46 @@ fun SettingsScreen(
         }
     }
 
-    ScreenScaffold(
+    QmScreenScaffold(
         scrollState = listState,
         timeText = { TimeText() },
     ) { contentPadding ->
         ScalingLazyColumn(
+            scalingParams = edgeScalingParams(),
             state = listState,
+            rotaryScrollableBehavior = qmRotarySnap(listState),
             contentPadding = contentPadding,
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.fillMaxSize().rotaryList(listState),
+            modifier = Modifier.fillMaxSize(),
         ) {
             item { PageTitle("设置") }
 
+            // ---- 选项卡切换：通用 / 显示 / 播放设置 ----
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("通用", "显示", "播放设置").forEachIndexed { idx, label ->
+                        val selected = tab == idx
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (selected) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(
+                                    if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f),
+                                )
+                                .clickable { tab = idx }
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                        )
+                    }
+                }
+            }
+
+            // ==================== 选项卡：通用 ====================
+            if (tab == 0) {
             // ---- 账号与登录 ----
             item { SectionHeader("账号与登录") }
             item {
@@ -216,6 +256,10 @@ fun SettingsScreen(
                 }
             }
 
+            }
+
+            // ==================== 选项卡：播放设置 ====================
+            if (tab == 2) {
             // ---- 播放音质 ----
             item { SectionHeader("播放音质") }
             items(Quality.entries.size) { idx ->
@@ -258,6 +302,10 @@ fun SettingsScreen(
                 )
             }
 
+            }
+
+            // ==================== 选项卡：显示 ====================
+            if (tab == 1) {
             // ---- 显示模式 ----
             item { SectionHeader("显示模式") }
             item {
@@ -317,7 +365,43 @@ fun SettingsScreen(
                 }
             }
 
-            // ---- 存储 ----
+            // ---- 界面形态（方表/圆表，全 app 布局跟随切换） ----
+            item { SectionHeader("界面形态") }
+            val shapeOptions = listOf(
+                UiShape.AUTO to "跟随屏幕",
+                UiShape.SQUARE to "方表",
+                UiShape.ROUND to "圆表",
+            )
+            items(shapeOptions.size) { idx ->
+                val (shape, label) = shapeOptions[idx]
+                OptionRow(
+                    label = label,
+                    subtitle = when (shape) {
+                        UiShape.AUTO -> "按手表实际屏幕形状"
+                        UiShape.SQUARE -> "方屏专属布局与全部进度样式"
+                        UiShape.ROUND -> "经典圆盘播放页"
+                    },
+                    selected = ui.uiShape == shape,
+                    onClick = { vm.selectUiShape(shape) },
+                    iconRes = R.drawable.ic_brightness,
+                )
+            }
+
+            // ---- 显示：播放进度样式（六选一，带动画示意） ----
+            item { SectionHeader("播放进度样式") }
+            items(ProgressStyle.entries.size) { idx ->
+                val s = ProgressStyle.entries[idx]
+                ProgressStyleRow(
+                    style = s,
+                    selected = ui.progressStyle == s,
+                    onSelect = { vm.selectProgressStyle(s) },
+                )
+            }
+
+            }
+
+            // ---- 存储（通用） ----
+            if (tab == 0) {
             item { SectionHeader("存储") }
             item {
                 val downloads by ServiceLocator.downloads.downloadsFlow.collectAsStateWithLifecycle()
@@ -505,7 +589,69 @@ fun SettingsScreen(
                 }
             }
 
+            }
+
             item { Spacer(Modifier.height(40.dp)) }
+        }
+    }
+}
+
+/** 播放进度样式选择行：动画示意图（循环假进度驱动，保证动起来）+ 名称 + 选中圆点 */
+@Composable
+private fun ProgressStyleRow(style: ProgressStyle, selected: Boolean, onSelect: () -> Unit) {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f))
+            .border(
+                0.5.dp,
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                else Color.White.copy(alpha = 0.14f),
+                shape,
+            )
+            .clickable { onSelect() }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Column {
+            ProgressStylePreview(style, Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = style.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                // 选中状态指示：外圈 + 选中实心圆点
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(18.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                            .border(
+                                width = 2.dp,
+                                color = if (selected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outlineVariant,
+                                shape = CircleShape,
+                            ),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (selected) MaterialTheme.colorScheme.primary
+                                else Color.Transparent,
+                            ),
+                    )
+                }
+            }
         }
     }
 }

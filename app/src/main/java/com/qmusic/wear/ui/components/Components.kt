@@ -2,6 +2,7 @@ package com.qmusic.wear.ui.components
 
 import android.view.HapticFeedbackConstants
 import android.view.View
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -16,12 +17,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -56,15 +60,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
 import androidx.wear.compose.foundation.lazy.ScalingLazyListState
+import androidx.wear.compose.foundation.lazy.ScalingParams
+import androidx.wear.compose.foundation.rotary.RotaryScrollableBehavior
 import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
 import androidx.wear.compose.foundation.rotary.rotaryScrollable
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import com.qmusic.wear.R
 import com.qmusic.wear.data.model.Song
+import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 
 /**
  * 高斯模糊封面背景：播放页 / 歌词页共用。
@@ -692,8 +701,8 @@ fun LiveCapsule(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
-            // 固定宽度：不随歌名长短改变大小
-            .width(108.dp)
+            // 固定宽度：不随歌名长短改变大小（方表屏窄，胶囊相应收窄避免挤占过多屏宽）
+            .width(if (com.qmusic.wear.ui.theme.LocalIsRoundScreen.current) 108.dp else 96.dp)
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f))
             .border(0.5.dp, Color.White.copy(alpha = 0.16f), shape)
@@ -716,36 +725,169 @@ fun LiveCapsule(
 }
 
 /**
- * 表冠旋转滚动（列表页通用）：给页面根布局挂 rotaryScrollable，
- * 旋转表冠驱动 ScalingLazyColumn 滚动（贴合 One UI 8 Watch 的列表操作习惯）。
- * 用法：在页面根 Box/ScreenScaffold 内容上 `.rotaryList(listState)`。
+ * ScalingLazyColumn 内置表冠滚动的统一行为（snap 手感，与队列页一致）。
+ *
+ * 重要：必须通过 ScalingLazyColumn 的 rotaryScrollableBehavior 参数走【内置】表冠支持，
+ * 不要再用 Modifier.rotaryScrollable 另挂一层——ScalingLazyColumn 内部已自带
+ * requestFocusOnHierarchyActive().rotaryScrollable() 焦点协调机制，外挂第二层
+ * focusTarget 会与之抢焦点（且官方文档明确禁止与 LaunchedEffect.requestFocus 混用），
+ * 表现为「有震动但页面不滚」或「页面能滚但无震动/无指示条」等不确定行为。
+ *
+ * 触觉保持库默认（v2.0.1 同款）：不做任何附加震动。
  */
 @Composable
-fun Modifier.rotaryList(state: androidx.wear.compose.foundation.lazy.ScalingLazyListState): Modifier {
+fun qmRotarySnap(state: ScalingLazyListState): RotaryScrollableBehavior =
+    RotaryScrollableDefaults.snapBehavior(state)
+
+/**
+ * 表冠自定义行为：把表冠旋转事件交给页面自带的 [RotaryScrollableBehavior] 处理
+ * （页面级导航等非滚动用途）。用法：在页面根布局上 `.rotaryCustom(behavior)`。
+ */
+@Composable
+fun Modifier.rotaryCustom(behavior: RotaryScrollableBehavior): Modifier {
     val focusRequester = androidx.compose.ui.focus.FocusRequester()
     androidx.compose.runtime.LaunchedEffect(Unit) { focusRequester.requestFocus() }
     return then(
         rotaryScrollable(
-            behavior = RotaryScrollableDefaults.snapBehavior(state),
+            behavior = behavior,
             focusRequester = focusRequester,
         ),
     )
 }
 
+// -------------------------------------------------------------------------
+// 方表脚手架与滚动指示
+// -------------------------------------------------------------------------
+
 /**
- * 表冠旋转滚动（普通滚动容器）：适配 LazyColumn / verticalScroll 的 ScrollableState。
+ * 方表贴边适配：material3 [ScreenScaffold] 默认 contentPadding 自带屏宽 5.2% 的横向分量
+ * （方表 ≈13dp），与页面自身的 2dp 贴边留白叠加成「卡片与屏幕边缘之间的双层空隙」。
+ * 方表去掉横向分量（边界完全由物理黑边承担），圆表原样返回（圆表取值不变）。
  */
 @Composable
-fun Modifier.rotaryGeneric(state: androidx.compose.foundation.gestures.ScrollableState): Modifier {
-    val focusRequester = androidx.compose.ui.focus.FocusRequester()
-    androidx.compose.runtime.LaunchedEffect(Unit) { focusRequester.requestFocus() }
-    return then(
-        rotaryScrollable(
-            behavior = RotaryScrollableDefaults.behavior(state),
-            focusRequester = focusRequester,
-        ),
-    )
+fun edgeToEdgeContentPadding(contentPadding: androidx.compose.foundation.layout.PaddingValues): androidx.compose.foundation.layout.PaddingValues =
+    if (com.qmusic.wear.ui.theme.LocalIsRoundScreen.current) {
+        contentPadding
+    } else {
+        androidx.compose.foundation.layout.PaddingValues(
+            top = contentPadding.calculateTopPadding(),
+            bottom = contentPadding.calculateBottomPadding(),
+        )
+    }
+
+/**
+ * 屏幕形状感知的页面脚手架：
+ * - 圆表：与 material3 [ScreenScaffold] 完全一致（默认弧形滚动指示）。
+ * - 方表：禁用弧形指示条，改用右侧竖直细条 [SquareScrollIndicator]（表冠处，中间略偏上）；
+ *   并去掉默认 contentPadding 的横向分量，卡片贴边不留空隙。
+ */
+@Composable
+fun QmScreenScaffold(
+    scrollState: ScalingLazyListState,
+    modifier: Modifier = Modifier,
+    timeText: @Composable () -> Unit = { androidx.wear.compose.material3.TimeText() },
+    content: @Composable androidx.compose.foundation.layout.BoxScope.(androidx.compose.foundation.layout.PaddingValues) -> Unit,
+) {
+    val isRound = com.qmusic.wear.ui.theme.LocalIsRoundScreen.current
+    if (isRound) {
+        ScreenScaffold(
+            scrollState = scrollState,
+            modifier = modifier,
+            timeText = timeText,
+            content = content,
+        )
+    } else {
+        // 方表：指示条不再经 scrollIndicator slot——该 slot 内的 fullscreen Box（内容每帧随
+        // layoutInfo 重算重组）会插入 content 与列表之间，破坏 ScalingLazyColumn 内置的
+        // requestFocusOnHierarchyActive rotary 焦点链；改为外层 Box 直接叠加指示条。
+        // contentPadding 预裁横向分量后透传（与原 wrapper 等价），content 原样直传，
+        // 节点结构与已验证表冠有效的原生 ScreenScaffold 路径一致。
+        Box(modifier) {
+            ScreenScaffold(
+                scrollState = scrollState,
+                modifier = Modifier.fillMaxSize(),
+                timeText = timeText,
+                contentPadding = edgeToEdgeContentPadding(
+                    androidx.wear.compose.material3.ScreenScaffoldDefaults.contentPadding,
+                ),
+                scrollIndicator = null,
+                content = content,
+            )
+            SquareScrollIndicator(
+                scrollState,
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 3.dp),
+            )
+        }
+    }
 }
+
+/**
+ * 方表专用滚动指示条：右侧竖直圆角细条，随列表进度上下移动。
+ * 轨道中心比屏幕几何中心略偏上（对齐表冠位置）。
+ */
+@Composable
+fun SquareScrollIndicator(state: ScalingLazyListState, modifier: Modifier = Modifier) {
+    val progress by remember {
+        androidx.compose.runtime.derivedStateOf {
+            val li = state.layoutInfo
+            val total = li.totalItemsCount
+            if (total <= 1) return@derivedStateOf -1f
+            val vis = li.visibleItemsInfo
+            val denom = (total - vis.size).coerceAtLeast(1)
+            // 首个可见项 index + 项内滚动比例（offset 为负表示滚出顶部），换算成小数进度
+            val first = vis.firstOrNull()
+            val itemSize = (first?.size ?: 0).coerceAtLeast(1)
+            val idxF = (first?.index ?: 0) - (first?.offset ?: 0).toFloat() / itemSize
+            (idxF / denom).coerceIn(0f, 1f)
+        }
+    }
+    if (progress < 0f) return
+    // 轨道：灰底全程可见（同圆表指示条风格），滑块 24dp 在 36dp 行程内随进度移动；
+    // 整体中心比几何中心偏上 40dp（表冠上方区域）
+    val travel = 36.dp
+    val yAnim by animateDpAsState(travel * progress, label = "sq_scroll_ind")
+    Box(
+        modifier
+            .offset(y = -40.dp)
+            .size(width = 3.dp, height = travel + 24.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(Color.White.copy(alpha = 0.14f)),
+    ) {
+        Box(
+            Modifier
+                .offset(y = yAnim)
+                .fillMaxWidth()
+                .height(24.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color.White.copy(alpha = 0.55f)),
+        )
+    }
+}
+
+/**
+ * ScalingLazyColumn 边缘缩放参数：方表禁用缩放（缩放会让非中心卡片变窄、视觉上不贴边，
+ * 由物理黑边承担边界的贴边设计要求全宽显示）；圆表保留默认缩放（弧形感设计特性）。
+ */
+@Composable
+fun edgeScalingParams(): ScalingParams =
+    if (LocalIsRoundScreen.current) {
+        ScalingLazyColumnDefaults.scalingParams()
+    } else {
+        // compose-foundation 1.6.2 的缩放参数名为 edgeScale（默认 0.7f）：
+        // 方表置 1f 后边缘 item 不再被缩小，等价于禁用缩放
+        ScalingLazyColumnDefaults.scalingParams(edgeScale = 1f)
+    }
+
+/**
+ * ScalingLazyColumn 未显式传 contentPadding 时的库默认值是 PaddingValues(horizontal = 10.dp)
+ * （圆表防弧边惯例），方表会造成两侧 10dp 贴边空隙——方表归零、圆表保留默认。
+ * 注意：显式传了 contentPadding 的列表无需此 helper（默认值已被覆盖）。
+ */
+@Composable
+fun edgeListPadding(): PaddingValues =
+    if (LocalIsRoundScreen.current) PaddingValues(horizontal = 10.dp) else PaddingValues(0.dp)
 
 // -------------------------------------------------------------------------
 // 触觉反馈
@@ -760,7 +902,18 @@ fun Modifier.rotaryGeneric(state: androidx.compose.foundation.gestures.Scrollabl
 class QmHaptics(private val view: View) {
     fun tap() = view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
     fun tick() = view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-    fun confirm() = view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+    // 手势确认（滑动返回/换页）：API 30+ 用 GESTURE_END（X轴马达短促哒声）；
+    // API 28-29 预设反馈均偏长，直接用 Vibrator 打 12ms 短脉冲（清脆哒声）
+    fun confirm() {
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            view.performHapticFeedback(HapticFeedbackConstants.GESTURE_END)
+            return
+        }
+        val v = view.context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+            ?: return
+        if (!v.hasVibrator()) return
+        v.vibrate(android.os.VibrationEffect.createOneShot(12, 110))
+    }
 }
 
 @Composable

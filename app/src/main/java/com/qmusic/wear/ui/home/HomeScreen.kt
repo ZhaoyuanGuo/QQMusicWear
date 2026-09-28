@@ -47,19 +47,22 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.compose.foundation.hierarchicalFocusGroup
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import coil3.compose.AsyncImage
 import com.qmusic.wear.R
 import com.qmusic.wear.ServiceLocator
-import com.qmusic.wear.ui.components.rotaryList
+import com.qmusic.wear.ui.components.QmScreenScaffold
+import com.qmusic.wear.ui.components.edgeScalingParams
+import com.qmusic.wear.ui.components.qmRotarySnap
 import com.qmusic.wear.ui.components.rememberHaptics
+import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 import com.qmusic.wear.ui.mine.MineOverlay
 
 /**
@@ -107,13 +110,16 @@ fun HomeScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        ScreenScaffold(
+        QmScreenScaffold(
             scrollState = listState,
             timeText = { TimeText() },
         ) { contentPadding ->
             Box(
                 Modifier
                     .fillMaxSize()
+                    // 焦点组：与「我的」页互斥持焦——「我的」页打开时本列表让出表冠焦点，
+                    // 关闭时（active 翻转）触发内置焦点协调重新把焦点还给本列表
+                    .hierarchicalFocusGroup(active = !showMenu)
                     .pointerInput(Unit) {
                         detectHorizontalDragGestures(
                             onHorizontalDrag = { change, amount ->
@@ -132,14 +138,18 @@ fun HomeScreen(
                     },
             ) {
                 ScalingLazyColumn(
+                    scalingParams = edgeScalingParams(),
                     state = listState,
+                    // 表冠滚动走 ScalingLazyColumn 内置支持（snap 手感），
+                    // 不再外挂 rotaryScrollable——外挂层会与内置焦点协调抢焦点
+                    rotaryScrollableBehavior = qmRotarySnap(listState),
                     contentPadding = PaddingValues(
                         top = contentPadding.calculateTopPadding() + 8.dp,
                         bottom = contentPadding.calculateBottomPadding() + 30.dp,
                     ),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxSize().rotaryList(listState),
+                    modifier = Modifier.fillMaxSize(),
                 ) {
                     if (!offline) {
                     // ---- 大卡 1：每日30首 ----
@@ -331,6 +341,9 @@ private fun BigCard(
     onOpen: () -> Unit,
 ) {
     val shape = RoundedCornerShape(20.dp)
+    // 屏幕形状：圆表保持弧边留白；方表由物理黑边承担边界，卡片直接顶屏
+    val isRound = LocalIsRoundScreen.current
+    val hPad = if (isRound) 18.dp else 2.dp
     // 按压弹性反馈：按下缩至0.97，松开回弹
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -338,8 +351,8 @@ private fun BigCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            // 圆屏适配：左右收窄，避免直角边角被圆形表盘裁切
-            .padding(horizontal = 18.dp)
+            // 圆屏适配：左右收窄，避免直角边角被圆形表盘裁切；方屏收窄留白
+            .padding(horizontal = hPad)
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
@@ -389,7 +402,7 @@ private fun BigCard(
             Modifier
                 .align(Alignment.TopStart)
                 .fillMaxWidth()
-                .padding(end = 68.dp),
+                .padding(end = if (isRound) 68.dp else 62.dp),
         ) {
             Text(
                 text = title,
@@ -414,7 +427,7 @@ private fun BigCard(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .padding(end = 68.dp),
+                .padding(end = if (isRound) 68.dp else 62.dp),
         ) {
             if (loading) {
                 CircularProgressIndicator(modifier = Modifier.size(26.dp))

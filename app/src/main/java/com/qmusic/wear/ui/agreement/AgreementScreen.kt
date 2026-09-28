@@ -29,6 +29,8 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.ui.components.PageTitle
+import com.qmusic.wear.ui.components.edgeToEdgeContentPadding
+import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 import kotlinx.coroutines.delay
 
 /**
@@ -58,11 +60,11 @@ fun AgreementScreen(
 
     ScreenScaffold(timeText = { TimeText() }) { contentPadding ->
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding),
-        ) {
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(edgeToEdgeContentPadding(contentPadding)),
+            ) {
             PageTitle("用户协议")
             Text(
                 "v1.2 · 2026-09-15 生效",
@@ -77,7 +79,8 @@ fun AgreementScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(scrollState)
-                    .padding(horizontal = 20.dp),
+                    // 圆表两侧大留白防弧边裁切；方表收窄让条款正文多显示几个字
+                    .padding(horizontal = if (LocalIsRoundScreen.current) 20.dp else 2.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 SECTIONS.forEach { (title, body) ->

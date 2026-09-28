@@ -60,6 +60,7 @@ import com.qmusic.wear.ui.source.SourceGateScreen
 import com.qmusic.wear.data.source.SourceManager
 import com.qmusic.wear.data.source.SourceState
 import com.qmusic.wear.ui.theme.LocalIsAmbient
+import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 import com.qmusic.wear.ui.theme.LocalLowPerf
 import com.qmusic.wear.ui.theme.QMusicTheme
 
@@ -317,6 +318,8 @@ private fun AppRoot() {
 
     // 低配置模式：页面转场直接硬切（省 GPU 合成与动画帧）
     val lowPerf = LocalLowPerf.current
+    // 屏幕形状：方表用物理黑边承担边界（悬浮元素贴屏）
+    val isRoundScreen = LocalIsRoundScreen.current
     Box(Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = screen,
@@ -495,7 +498,8 @@ private fun AppRoot() {
                 onClick = { screen = Screen.Player },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp),
+                    // 圆表：底部留白避开弧边；方表：物理黑边承担边界，贴屏显示
+                    .padding(bottom = if (isRoundScreen) 24.dp else 6.dp),
             )
         }
     }

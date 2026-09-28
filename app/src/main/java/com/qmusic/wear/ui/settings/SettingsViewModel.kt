@@ -3,7 +3,9 @@ package com.qmusic.wear.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qmusic.wear.ServiceLocator
+import com.qmusic.wear.data.model.ProgressStyle
 import com.qmusic.wear.data.model.Quality
+import com.qmusic.wear.data.model.UiShape
 import com.qmusic.wear.data.model.UserProfile
 import com.qmusic.wear.data.player.SleepTimer
 import com.qmusic.wear.util.formatBytes
@@ -28,6 +30,10 @@ data class SettingsUiState(
     val keepScreenOn: Boolean = false,
     /** 低配置设备模式：关闭特效/削减动画，低端手表更流畅 */
     val lowPerf: Boolean = false,
+    /** 显示形态（方表/圆表 UI 覆盖，全 app 布局跟随） */
+    val uiShape: UiShape = UiShape.AUTO,
+    /** 播放页进度样式（六选一，默认液体填充） */
+    val progressStyle: ProgressStyle = ProgressStyle.LIQUID,
     /** 缓存清理状态：null=空闲，""=清理中，非空=结果提示 */
     val cacheClearMessage: String? = null,
     /** 日志提取状态：null=空闲，""=提取中，非空=结果提示 */
@@ -58,6 +64,8 @@ class SettingsViewModel : ViewModel() {
                 launchToastEnabled = ServiceLocator.settingsStore.launchToastFlow.value,
                 keepScreenOn = ServiceLocator.settingsStore.keepScreenOnFlow.value,
                 lowPerf = ServiceLocator.settingsStore.lowPerfFlow.value,
+                uiShape = ServiceLocator.settingsStore.uiShapeFlow.value,
+                progressStyle = ServiceLocator.settingsStore.progressStyleFlow.value,
                 sourceVersion = com.qmusic.wear.data.source.SourceManager.currentVersion(),
             )
             val cred = ServiceLocator.credential.value
@@ -112,6 +120,18 @@ class SettingsViewModel : ViewModel() {
     fun setLowPerf(enabled: Boolean) {
         _ui.value = _ui.value.copy(lowPerf = enabled)
         ServiceLocator.settingsStore.setLowPerf(enabled)
+    }
+
+    /** 显示形态（方表/圆表）：立即生效，全 app 布局跟随切换 */
+    fun selectUiShape(shape: UiShape) {
+        _ui.value = _ui.value.copy(uiShape = shape)
+        ServiceLocator.settingsStore.setUiShape(shape)
+    }
+
+    /** 播放页进度样式（六选一） */
+    fun selectProgressStyle(style: ProgressStyle) {
+        _ui.value = _ui.value.copy(progressStyle = style)
+        ServiceLocator.settingsStore.setProgressStyle(style)
     }
 
     /** 清理图片缓存（Coil 内存 + 磁盘），完成后提示释放空间 */

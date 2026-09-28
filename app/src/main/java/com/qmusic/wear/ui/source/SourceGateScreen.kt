@@ -20,6 +20,8 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.data.source.SourceState
 import com.qmusic.wear.ui.components.PageTitle
+import com.qmusic.wear.ui.components.edgeToEdgeContentPadding
+import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 
 /**
  * 音乐源下载门页（同意协议后、源就绪前展示）：
@@ -38,7 +40,7 @@ fun SourceGateScreen(
             verticalArrangement = Arrangement.Center,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPadding),
+                .padding(edgeToEdgeContentPadding(contentPadding)),
         ) {
             PageTitle("音乐源")
             Spacer(Modifier.height(8.dp))
@@ -60,7 +62,7 @@ fun SourceGateScreen(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 24.dp),
+                        modifier = Modifier.padding(horizontal = if (LocalIsRoundScreen.current) 24.dp else 2.dp),
                     )
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
