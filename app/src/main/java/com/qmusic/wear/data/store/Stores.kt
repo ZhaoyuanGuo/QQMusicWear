@@ -532,7 +532,7 @@ class AgreementStore(context: Context) {
         private const val KEY_AGREED_VERSION = "agreed_version"
 
         /** 协议内容变更时 +1，老用户将重新收到弹窗 */
-        const val AGREEMENT_VERSION = 3
+        const val AGREEMENT_VERSION = 4
     }
 }
 
