@@ -455,6 +455,24 @@ class PlayerConnection(
         controller?.seekTo(positionMs)
     }
 
+    /**
+     * 切换音乐源：停播并清空队列（队列曲目属于旧源，跨源无法解析）。
+     * 同时清掉持久化快照，避免下次启动恢复出无法播放的旧源队列。
+     */
+    fun clearQueueAndStop() {
+        restoring = true
+        currentQueue = emptyList()
+        currentUrls = emptyList()
+        queueStore.clear()
+        mainExecutor.execute {
+            val c = controller ?: return@execute
+            c.stop()
+            c.clearMediaItems()
+            _state.value = NowPlaying()
+        }
+        restoring = false
+    }
+
     /** 切换音质：重新解析当前队列，保持曲目与进度 */
     fun switchQuality(newUrls: List<ResolvedUrl?>) {
         val c = controller ?: return
@@ -604,6 +622,11 @@ private class QueueStore(context: Context) {
             })
         }
         prefs.edit().putString(KEY_SNAPSHOT, obj.toString()).apply()
+    }
+
+    /** 清空持久化快照（切换音乐源时调用） */
+    fun clear() {
+        prefs.edit().remove(KEY_SNAPSHOT).apply()
     }
 
     private companion object {

@@ -207,7 +207,7 @@ fun SettingsScreen(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
-                                    text = "QQ音乐账号",
+                                    text = "${ui.activeSourceName}账号",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -253,6 +253,38 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
+                }
+            }
+
+            // ---- QPlay 投放 ----
+            item { SectionHeader("QPlay 投放") }
+            item {
+                GlassRow(onClick = { vm.setQPlayEnabled(!ui.qplayEnabled) }) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_volume),
+                        contentDescription = null,
+                        tint = if (ui.qplayEnabled) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(17.dp),
+                    )
+                    Spacer(Modifier.size(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "接收手机投放",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (ui.qplayEnabled) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            if (ui.qplayEnabled) "手机 QQ 音乐 QPlay 可发现本手表"
+                            else "开启后出现在手机 QPlay 设备列表",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    TogglePill(checked = ui.qplayEnabled)
                 }
             }
 
@@ -453,6 +485,17 @@ fun SettingsScreen(
 
             // ---- 音乐源 ----
             item { SectionHeader("音乐源") }
+            items(ui.sources.size) { idx ->
+                val src = ui.sources[idx]
+                SourceRow(
+                    name = src.displayName,
+                    subtitle = src.subtitle.ifEmpty { src.id },
+                    color = Color(src.themeColor),
+                    selected = src.id == ui.activeSourceId,
+                    enabled = !ui.sourceSwitching,
+                    onClick = { vm.selectSource(src.id) },
+                )
+            }
             item {
                 GlassRow(onClick = { vm.updateSource() }) {
                     Icon(
@@ -676,6 +719,68 @@ private fun TogglePill(checked: Boolean) {
                 .clip(androidx.compose.foundation.shape.CircleShape)
                 .background(Color.White),
         )
+    }
+}
+
+/** 音乐源选择行：品牌色圆点 + 名称 + 说明 + 选中圆点指示 */
+@Composable
+private fun SourceRow(
+    name: String,
+    subtitle: String,
+    color: Color,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    GlassRow(onClick = { if (enabled) onClick() }) {
+        Box(
+            modifier = Modifier
+                .size(17.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        Spacer(Modifier.size(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                name,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        // 选中状态指示：外圈 + 选中实心圆点
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.size(18.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .border(
+                        width = 2.dp,
+                        color = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outlineVariant,
+                        shape = CircleShape,
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (selected) MaterialTheme.colorScheme.primary
+                        else Color.Transparent,
+                    ),
+            )
+        }
     }
 }
 

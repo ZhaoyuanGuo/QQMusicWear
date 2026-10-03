@@ -1,6 +1,7 @@
 package com.qmusic.wear.data.api
 
 import com.qmusic.wear.data.model.AlbumDetail
+import com.qmusic.wear.data.model.HomeCard
 import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.Quality
 import com.qmusic.wear.data.model.ResolvedUrl
@@ -9,6 +10,7 @@ import com.qmusic.wear.data.model.Song
 import com.qmusic.wear.data.model.UserProfile
 import com.qmusic.wear.data.source.AlbumDetailDto
 import com.qmusic.wear.data.source.ArtistSongsDto
+import com.qmusic.wear.data.source.HomeFeedDto
 import com.qmusic.wear.data.source.PlaylistDetailDto
 import com.qmusic.wear.data.source.PlaylistDto
 import com.qmusic.wear.data.source.PlaylistDtoRef
@@ -206,6 +208,40 @@ suspend fun QMusicApi.toplists(): List<ToplistItem> =
 suspend fun QMusicApi.toplistSongs(topId: Int): List<Song> =
     callSongs("toplistSongs", args("topId" to topId))
 
+/**
+ * 首页推送大卡（各音乐源可给出不同首页）。
+ * 源未实现 homeFeed 时返回空列表，由上层回退到旧推荐逻辑。
+ */
+suspend fun QMusicApi.homeFeed(): List<HomeCard> {
+    val dto = SourceDtos.json.decodeFromString(
+        HomeFeedDto.serializer(),
+        call("homeFeed", "{}"),
+    )
+    return dto.cards.map { c ->
+        HomeCard(
+            id = c.id,
+            title = c.title,
+            subtitle = c.subtitle,
+            action = c.action,
+            targetId = c.targetId,
+            coverUrl = c.coverUrl,
+            songName = c.songName,
+            singers = c.singers,
+            colorStart = parseHexColor(c.colorStart),
+            colorEnd = parseHexColor(c.colorEnd),
+            songs = c.songs.map { it.toModel() },
+        )
+    }
+}
+
+/** "#RRGGBB" / "0xRRGGBB" -> 0xFFRRGGBB；无效返回 null */
+private fun parseHexColor(s: String): Long? {
+    val t = s.trim()
+    if (t.isEmpty()) return null
+    val hex = t.removePrefix("#").removePrefix("0x").removePrefix("0X")
+    return hex.toLongOrNull(16)?.let { if (hex.length <= 6) 0xFF000000L or it else it }
+}
+
 /** 歌单广场栏目 */
 suspend fun QMusicApi.musicHallShelves(): List<MusicHallShelf> =
     SourceDtos.json
@@ -227,7 +263,8 @@ data class Credential(
     val createTime: Long = 0L,
     val keyExpiresIn: Long = 0L,
 ) {
-    val isLogged: Boolean get() = musicid != 0L && musickey.isNotEmpty()
+    // 多源：非 QQ 源的用户 id 未必是数字，登录态以「会话密钥非空」为准
+    val isLogged: Boolean get() = musickey.isNotEmpty()
     val isExpired: Boolean get() = createTime > 0 && keyExpiresIn > 0 &&
         System.currentTimeMillis() / 1000 >= createTime + keyExpiresIn
 

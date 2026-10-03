@@ -51,6 +51,24 @@ data class UserProfile(
     val encryptUin: String = "",
 )
 
+/**
+ * 首页推送大卡（homeFeed 契约）。
+ * action 决定点击行为（宿主分发到页面/播放），songs 为该卡可直接播放的内容。
+ */
+data class HomeCard(
+    val id: String = "",
+    val title: String = "",
+    val subtitle: String = "",
+    val action: String = "",
+    val targetId: String = "",
+    val coverUrl: String = "",
+    val songName: String = "",
+    val singers: String = "",
+    val colorStart: Long? = null,
+    val colorEnd: Long? = null,
+    val songs: List<Song> = emptyList(),
+)
+
 /** 聚合搜索结果 */
 data class SearchResult(
     val songs: List<Song> = emptyList(),

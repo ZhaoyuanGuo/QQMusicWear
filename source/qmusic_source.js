@@ -1,4 +1,4 @@
-//qmu-sig:v1:zOnSsbhIaB0stOXcZHwIS9Yoz9T2nZ+Dcy0XDzyhpn/uFpKONodzAydnU9HquuE2enuLvJdlgo3iLTwXZ7gdCw==
+//qmu-sig:v1:bY0lR//JzcTRWJBUZkGrfmWKp8e7cn5laZjshBC9La886ZT1fE31hypDJ9aKZEVIIO9BU4HWIV8AJl+odjAGDQ==
 /*
  * QQMusicWear 音乐源插件（Web 协议）
  * ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@
  * ---------------------------------------------------------------------------
  */
 
-var SOURCE_VERSION = 9;
+var SOURCE_VERSION = 10;
 
 /** APK 兼容性闸门：宿主 versionCode 低于该值将拒绝加载本源 */
 var MIN_APP_VERSION = 27;
@@ -547,6 +547,47 @@ var handlers = {
   recommendNewSongs: function (args) {
     var resp = musicuCall('newsong.NewSongServer', 'get_new_song_info', { type: 5 });
     return parseSongsLoose(resp, ['new_song', 'song_list', 'list', 'data']);
+  },
+
+  /**
+   * 首页推送大卡（随音乐源变化；宿主按 action 分发到页面/播放）。
+   * 卡片数量与内容由源决定：QQ 音乐给「每日30首 / 猜你想听 / 排行榜 / 歌单广场」。
+   */
+  homeFeed: function (args) {
+    var cards = [];
+    var songs = [];
+    try { songs = handlers.recommendSongs({}); } catch (e) { qmu.log('homeFeed err: ' + e); }
+    if (!songs || songs.length === 0) {
+      try { songs = handlers.recommendNewSongs({}); } catch (e2) { }
+    }
+    if (!songs) songs = [];
+    var rep = songs.length ? songs[0] : null;
+    cards.push({
+      id: 'daily',
+      title: '每日30首',
+      subtitle: songs.length ? ('为你推荐 · ' + songs.length + ' 首') : '为你推荐',
+      action: 'daily',
+      coverUrl: rep ? rep.cover300 : '',
+      songName: rep ? rep.name : '',
+      singers: rep ? rep.singers : '',
+      songs: songs
+    });
+    if (songs.length > 0) {
+      var lucky = songs[Math.floor(Math.random() * songs.length)];
+      cards.push({
+        id: 'guess',
+        title: '猜你想听',
+        subtitle: '私人雷达',
+        action: 'daily',
+        coverUrl: lucky.cover300,
+        songName: lucky.name,
+        singers: lucky.singers,
+        songs: songs
+      });
+    }
+    cards.push({ id: 'rank', title: '排行榜', subtitle: '巅峰榜 · 热歌 · 新歌', action: 'rank' });
+    cards.push({ id: 'square', title: '歌单广场', subtitle: '官方精选歌单', action: 'square' });
+    return { cards: cards };
   },
 
   /** 歌单详情（我喜欢 / 收藏歌单共用；songlist 元素可能包一层 JSON 字符串） */
@@ -1380,6 +1421,8 @@ var handlers = {
 qmu.register({
   manifest: {
     id: 'qmusic-web',
+    name: 'QQ音乐',
+    themeColor: '#31C27C',
     version: SOURCE_VERSION,
     minAppVersion: MIN_APP_VERSION,
     playbackHeaders: { 'User-Agent': UA, 'Referer': REFERER },

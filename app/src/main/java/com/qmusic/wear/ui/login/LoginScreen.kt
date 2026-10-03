@@ -44,6 +44,8 @@ fun LoginScreen(
     vm: LoginViewModel = viewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    // 当前音乐源展示名（登录页文案与二维码同源切换）
+    val sourceName by com.qmusic.wear.data.source.SourceManager.displayNameFlow.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { vm.startLogin() }
     LaunchedEffect(ui.status) {
@@ -86,7 +88,7 @@ fun LoginScreen(
                             }.getOrNull() ?: android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
                             Image(
                                 bitmap = decoded.asImageBitmap(),
-                                contentDescription = "QQ 登录二维码",
+                                contentDescription = "$sourceName 登录二维码",
                                 modifier = Modifier
                                     .size(96.dp)
                                     .clip(RoundedCornerShape(12.dp))
@@ -105,7 +107,7 @@ fun LoginScreen(
                         Text(
                             text = when (ui.status) {
                                 QrStatus.ScannedConfirm -> stringResource(R.string.login_scanned)
-                                else -> stringResource(R.string.login_wait_scan)
+                                else -> stringResource(R.string.login_wait_scan, sourceName)
                             },
                             style = MaterialTheme.typography.bodySmall,
                             textAlign = TextAlign.Center,

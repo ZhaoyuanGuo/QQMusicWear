@@ -2,6 +2,12 @@
 <resources>
     <string name="app_name">QQ音乐</string>
 
+    <!-- 各音乐源对应的桌面名称（activity-alias 标签，随源切换） -->
+    <string name="app_name_qq">QQ音乐</string>
+    <string name="app_name_kugou">酷狗音乐</string>
+    <string name="app_name_netease">网易云音乐</string>
+    <string name="app_name_fanqie">番茄畅听</string>
+
     <!-- 无障碍描述 -->
     <string name="cd_prev">上一首</string>
     <string name="cd_play_pause">播放/暂停</string>
@@ -27,7 +33,7 @@
 
     <!-- 登录页 -->
     <string name="login_title">扫码登录</string>
-    <string name="login_wait_scan">请用手机 QQ 音乐扫码</string>
+    <string name="login_wait_scan">请用手机 %1$s 扫码</string>
     <string name="login_scanned">已扫码，请在手机上确认</string>
     <string name="login_expired">二维码已过期</string>
     <string name="login_success">登录成功</string>

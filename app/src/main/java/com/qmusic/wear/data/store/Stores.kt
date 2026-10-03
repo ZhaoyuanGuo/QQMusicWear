@@ -23,58 +23,68 @@ import kotlinx.serialization.json.put
 import java.io.File
 
 /**
- * 登录凭证持久化（SharedPreferences）。
+ * 登录凭证持久化（SharedPreferences，按音乐源隔离）。
+ * 每个源一份凭据，键名前缀为源 id；切换源即切换登录态。
  * 历史方案曾用 DataStore，这里保持零额外依赖且同步可读。
  */
 class CredentialStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("qmusic_credential", Context.MODE_PRIVATE)
 
-    private val _credentialFlow = MutableStateFlow(read())
-    val credentialFlow: StateFlow<com.qmusic.wear.data.api.Credential> = _credentialFlow.asStateFlow()
+    /** 读取指定源的凭据；无凭据返回 EMPTY */
+    fun read(sourceId: String): com.qmusic.wear.data.api.Credential {
+        // 兼容旧版：老用户凭据存在无前缀键下，视为默认源（QQ音乐）的凭据
+        val legacy = sourceId == LEGACY_SOURCE_ID
+        fun has(name: String) = prefs.contains(key(sourceId, name)) || (legacy && prefs.contains(name))
+        fun str(name: String): String =
+            prefs.getString(key(sourceId, name), null)
+                ?: if (legacy) prefs.getString(name, "").orEmpty() else ""
+        fun lng(name: String): Long =
+            if (prefs.contains(key(sourceId, name))) prefs.getLong(key(sourceId, name), 0L)
+            else if (legacy) prefs.getLong(name, 0L) else 0L
 
-    private fun read(): com.qmusic.wear.data.api.Credential {
-        if (!prefs.contains(KEY_MUSICID)) return com.qmusic.wear.data.api.Credential.EMPTY
+        if (!has("musicid")) return com.qmusic.wear.data.api.Credential.EMPTY
         return com.qmusic.wear.data.api.Credential(
-            musicid = prefs.getLong(KEY_MUSICID, 0L),
-            musickey = prefs.getString(KEY_MUSICKEY, "").orEmpty(),
-            strMusicid = prefs.getString(KEY_STR_MUSICID, "").orEmpty(),
-            encryptUin = prefs.getString(KEY_ENCRYPT_UIN, "").orEmpty(),
-            nick = prefs.getString(KEY_NICK, "").orEmpty(),
-            avatarUrl = prefs.getString(KEY_AVATAR, "").orEmpty(),
-            createTime = prefs.getLong(KEY_CREATE_TIME, 0L),
-            keyExpiresIn = prefs.getLong(KEY_EXPIRES_IN, 0L),
+            musicid = lng("musicid"),
+            musickey = str("musickey"),
+            strMusicid = str("str_musicid"),
+            encryptUin = str("encrypt_uin"),
+            nick = str("nick"),
+            avatarUrl = str("avatar_url"),
+            createTime = lng("create_time"),
+            keyExpiresIn = lng("key_expires_in"),
         )
     }
 
-    suspend fun save(cred: com.qmusic.wear.data.api.Credential) {
+    /** 写入指定源的凭据（apply 同步更新内存，随后 read 立即可见） */
+    fun save(sourceId: String, cred: com.qmusic.wear.data.api.Credential) {
         prefs.edit()
-            .putLong(KEY_MUSICID, cred.musicid)
-            .putString(KEY_MUSICKEY, cred.musickey)
-            .putString(KEY_STR_MUSICID, cred.strMusicid)
-            .putString(KEY_ENCRYPT_UIN, cred.encryptUin)
-            .putString(KEY_NICK, cred.nick)
-            .putString(KEY_AVATAR, cred.avatarUrl)
-            .putLong(KEY_CREATE_TIME, cred.createTime)
-            .putLong(KEY_EXPIRES_IN, cred.keyExpiresIn)
+            .putLong(key(sourceId, "musicid"), cred.musicid)
+            .putString(key(sourceId, "musickey"), cred.musickey)
+            .putString(key(sourceId, "str_musicid"), cred.strMusicid)
+            .putString(key(sourceId, "encrypt_uin"), cred.encryptUin)
+            .putString(key(sourceId, "nick"), cred.nick)
+            .putString(key(sourceId, "avatar_url"), cred.avatarUrl)
+            .putLong(key(sourceId, "create_time"), cred.createTime)
+            .putLong(key(sourceId, "key_expires_in"), cred.keyExpiresIn)
             .apply()
-        _credentialFlow.value = cred
     }
 
-    suspend fun clear() {
-        prefs.edit().clear().apply()
-        _credentialFlow.value = com.qmusic.wear.data.api.Credential.EMPTY
+    /** 清除指定源的凭据（切源/退出登录） */
+    fun clear(sourceId: String) {
+        val editor = prefs.edit()
+        listOf(
+            "musicid", "musickey", "str_musicid", "encrypt_uin",
+            "nick", "avatar_url", "create_time", "key_expires_in",
+        ).forEach { editor.remove(key(sourceId, it)) }
+        editor.apply()
     }
+
+    private fun key(sourceId: String, name: String) = "$sourceId.$name"
 
     private companion object {
-        const val KEY_MUSICID = "musicid"
-        const val KEY_MUSICKEY = "musickey"
-        const val KEY_STR_MUSICID = "str_musicid"
-        const val KEY_ENCRYPT_UIN = "encrypt_uin"
-        const val KEY_NICK = "nick"
-        const val KEY_AVATAR = "avatar_url"
-        const val KEY_CREATE_TIME = "create_time"
-        const val KEY_EXPIRES_IN = "key_expires_in"
+        /** 旧版无前缀凭据归属的源（QQ音乐） */
+        const val LEGACY_SOURCE_ID = "qmusic-web"
     }
 }
 
@@ -111,6 +121,15 @@ class SettingsStore(context: Context) {
     fun setLowPerf(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_LOW_PERF, enabled).apply()
         _lowPerfFlow.value = enabled
+    }
+
+    /** QPlay 投放（手表作为 QPlay/DLNA 渲染器，出现在手机 QQ 音乐的投放设备列表） */
+    private val _qplayEnabledFlow = MutableStateFlow(prefs.getBoolean(KEY_QPLAY_ENABLED, false))
+    val qplayEnabledFlow: StateFlow<Boolean> = _qplayEnabledFlow.asStateFlow()
+
+    fun setQPlayEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_QPLAY_ENABLED, enabled).apply()
+        _qplayEnabledFlow.value = enabled
     }
 
     /** 显示形态（方表/圆表 UI）：覆盖系统屏幕形状识别，驱动全 app 两套布局 */
@@ -174,6 +193,8 @@ class SettingsStore(context: Context) {
         const val KEY_LOW_PERF = "low_perf"
         const val KEY_UI_SHAPE = "ui_shape"
         const val KEY_PROGRESS_STYLE = "progress_style"
+        const val KEY_QPLAY_ENABLED = "qplay_enabled"
+        const val KEY_QPLAY_UDN = "qplay_udn"
     }
 }
 

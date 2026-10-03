@@ -6,6 +6,7 @@ import com.qmusic.wear.data.api.QMusicApi
 import com.qmusic.wear.data.api.ToplistItem
 import com.qmusic.wear.data.api.favPlaylists
 import com.qmusic.wear.data.api.guessRecommend
+import com.qmusic.wear.data.api.homeFeed
 import com.qmusic.wear.data.api.lyric
 import com.qmusic.wear.data.api.lyricRoma
 import com.qmusic.wear.data.api.lyricTrans
@@ -20,6 +21,7 @@ import com.qmusic.wear.data.api.toplistSongs
 import com.qmusic.wear.data.api.toplists
 import com.qmusic.wear.data.api.userProfile
 import com.qmusic.wear.data.model.AlbumDetail
+import com.qmusic.wear.data.model.HomeCard
 import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.Quality
 import com.qmusic.wear.data.model.ResolvedUrl
@@ -56,6 +58,19 @@ class MusicRepository(
     }
 
     suspend fun playlist(disstid: Long): Pair<Playlist?, List<Song>> = api.playlistDetail(disstid)
+
+    /** 首页推送大卡（随音乐源变化）；源未实现或失败返回空列表，由上层回退 */
+    suspend fun homeFeed(): List<HomeCard> = try {
+        api.homeFeed()
+    } catch (t: Throwable) {
+        lastHomeFeedError = t.message ?: t.toString()
+        emptyList()
+    }
+
+    /** 最近一次 homeFeed 失败原因（诊断用） */
+    @Volatile
+    var lastHomeFeedError: String = ""
+        private set
 
     // ---- 推荐内容（排行榜 / 歌单广场，无需登录） ----
 

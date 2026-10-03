@@ -210,16 +210,25 @@ class SourceEngine(
             )
         }
         val client = if (followRedirects) clientFollow else clientNoRedirect
-        client.newCall(builder.build()).execute().use { resp ->
-            val bytes = resp.body?.bytes() ?: ByteArray(0)
-            return "{" +
-                "\"status\":" + resp.code + "," +
-                "\"location\":" + Jsons.quote(resp.header("Location").orEmpty()) + "," +
-                "\"setCookie\":" + Jsons.writeStringList(resp.headers("Set-Cookie")) + "," +
-                // body：按 UTF-8 解码（文本响应）；bodyB64：原始字节 base64（二维码等二进制响应）
-                "\"body\":" + Jsons.quote(String(bytes, Charsets.UTF_8)) + "," +
-                "\"bodyB64\":" + Jsons.quote(Base64.getEncoder().encodeToString(bytes)) +
-                "}"
+        // 网络异常（含 TLS 校验失败）必须转成错误响应返回，绝不能把 Java 异常抛穿到 Rhino：
+        // 否则会以 ClassCastException("... cannot be cast to java.lang.Error") 形式逃逸，
+        // 使源脚本的 try/catch 失效、整个 handler 失败。
+        return try {
+            client.newCall(builder.build()).execute().use { resp ->
+                val bytes = resp.body?.bytes() ?: ByteArray(0)
+                "{" +
+                    "\"status\":" + resp.code + "," +
+                    "\"location\":" + Jsons.quote(resp.header("Location").orEmpty()) + "," +
+                    "\"setCookie\":" + Jsons.writeStringList(resp.headers("Set-Cookie")) + "," +
+                    // body：按 UTF-8 解码（文本响应）；bodyB64：原始字节 base64（二维码等二进制响应）
+                    "\"body\":" + Jsons.quote(String(bytes, Charsets.UTF_8)) + "," +
+                    "\"bodyB64\":" + Jsons.quote(Base64.getEncoder().encodeToString(bytes)) +
+                    "}"
+            }
+        } catch (t: Throwable) {
+            Log.w("SourceEngine", "HTTP 失败 $method $url: ${t.message}")
+            "{\"status\":0,\"location\":\"\",\"setCookie\":[],\"body\":\"\",\"bodyB64\":\"\",\"error\":" +
+                Jsons.quote(t.message ?: t.toString()) + "}"
         }
     }
 }
@@ -258,5 +267,6 @@ data class CredentialSnapshot(
     val nick: String = "",
     val avatarUrl: String = "",
 ) {
-    val isLogged: Boolean get() = musicid != 0L && musickey.isNotEmpty()
+    // 多源：非 QQ 源的用户 id 未必是数字，登录态以「会话密钥非空」为准
+    val isLogged: Boolean get() = musickey.isNotEmpty()
 }

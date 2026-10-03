@@ -18,12 +18,23 @@ const src = fs.readFileSync(scriptPath, 'utf8');
 
 let registered = null;
 
-/** 通用 musicu 成功包体（各 handler 解析后应得到空列表/空对象） */
-const genericBody = JSON.stringify({ code: 0, req_1: { code: 0, data: {} } });
+/**
+ * 通用 musicu 成功包体：结构完整（含 code:0 和嵌套 req_1.data）
+ * 使得各 handler 解析后得到空列表/空对象而不抛异常。
+ */
+const genericBody = JSON.stringify({
+  code: 0,
+  req_1: { code: 0, data: {
+    tracks: [], track_info: [], songList: [], song_info: [],
+    list: [], data: [], items: [], topList: [],
+    vec_songid: [], lyric: '', trans: '', roma: '',
+    dirinfo: {}, userinfo: {}, shelves: [],
+  }},
+});
 
 /** 必须存在的 handler（与 APK 侧调用一一对应） */
 const REQUIRED_HANDLERS = [
-  'ping', 'recommendSongs', 'recommendNewSongs', 'playlistDetail',
+  'ping', 'homeFeed', 'recommendSongs', 'recommendNewSongs', 'playlistDetail',
   'toplists', 'toplistSongs', 'artistSongs', 'albumSongs',
   'musicHallShelves', 'myPlaylists',
   'favPlaylists', 'userProfile', 'lyric', 'lyricTrans', 'lyricRoma',
@@ -34,14 +45,20 @@ const REQUIRED_HANDLERS = [
 /** 允许试调的 handler（qrLogin 会轮询阻塞，排除） */
 const SAFE_HANDLERS = REQUIRED_HANDLERS.filter((n) => n !== 'qrLogin' && n !== 'ping');
 
+/**
+ * qmu.http 契约：宿主桥接返回 JSON 字符串，脚本内 http() 对其 JSON.parse。
+ * mock 必须返回字符串以匹配实际运行时行为。
+ */
+const mockHttpResponse = JSON.stringify({
+  status: 200,
+  location: '',
+  setCookie: [],
+  body: genericBody,
+  bodyB64: Buffer.from(genericBody, 'utf8').toString('base64'),
+});
+
 global.qmu = {
-  http: () => ({
-    status: 200,
-    location: '',
-    setCookie: [],
-    body: genericBody,
-    bodyB64: Buffer.from(genericBody, 'utf8').toString('base64'),
-  }),
+  http: () => mockHttpResponse,
   credential: () => JSON.stringify({
     musicid: 0, musickey: '', strMusicid: '', encryptUin: '', nick: '', avatarUrl: '',
   }),
@@ -69,7 +86,10 @@ try {
 if (!registered) { fail('未调用 qmu.register'); }
 else {
   const m = registered.manifest || {};
-  if (m.id !== 'qmusic-web') fail('manifest.id 异常: ' + m.id);
+  // 多源：id 不限定具体值，但必须是非空字符串（宿主按 id 隔离缓存与凭据）
+  if (typeof m.id !== 'string' || !m.id) fail('manifest.id 缺失或非法: ' + m.id);
+  if (typeof m.name !== 'string' || !m.name) fail('manifest.name 缺失（品牌展示名）');
+  if (typeof m.themeColor !== 'string' || !m.themeColor) fail('manifest.themeColor 缺失（品牌色）');
   if (!Number.isInteger(m.version) || m.version < 1) fail('manifest.version 非法: ' + m.version);
   if (!Number.isInteger(m.minAppVersion) || m.minAppVersion < 0) {
     fail('manifest.minAppVersion 非法: ' + m.minAppVersion);
@@ -86,16 +106,20 @@ if (registered && typeof registered.handlers.ping === 'function') {
   if (registered.handlers.ping({}) !== 'ok') fail('ping() 未返回 "ok"');
 }
 
-// 4) 安全 handler 试调（网络为 mock 包体；handler 内部异常记 WARN 不阻断，序列化失败才阻断）
+// 4) 安全 handler 试调（mock 数据结构完整；handler 抛异常或返回 undefined 视为逻辑缺陷，阻断门禁）
 if (registered) {
   for (const name of SAFE_HANDLERS) {
     const fn = registered.handlers[name];
     if (typeof fn !== 'function') continue;
     try {
       const out = fn({});
+      if (out === undefined) {
+        fail(name + '() 返回 undefined，handler 必须有明确返回值');
+        continue;
+      }
       JSON.stringify(out);
     } catch (e) {
-      console.warn('WARN: ' + name + ' 抛错（mock 数据所致，可忽略）: ' + e.message);
+      fail(name + '() 抛出异常: ' + e.message);
     }
   }
 }

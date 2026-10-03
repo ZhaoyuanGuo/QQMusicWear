@@ -19,3 +19,10 @@ crash.log
 
 # 音乐源签名私钥（仅开发者本地保存，公钥随仓库提交）
 tools/source-signing/source_signing_private.key
+
+# QPlay 抓包日志：含用户 uin 与 vkey 直链，严禁提交
+tools/qplay_probe/*.log
+
+# IDE / 代码助手生成的本地产物
+.qoder/
+.vscode/

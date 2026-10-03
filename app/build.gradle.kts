@@ -99,6 +99,9 @@ dependencies {
     // 封面主色提取（卡片流/播放页自适应配色）
     implementation("androidx.palette:palette-ktx:1.0.0")
 
+    // 二维码生成：部分音乐源（酷狗/网易云）只返回二维码文本，由宿主渲染成图
+    implementation("com.google.zxing:core:3.5.3")
+
     // 单元测试（纯 JVM：签名校验 / DTO 契约）
     testImplementation("junit:junit:4.13.2")
 }

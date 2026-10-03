@@ -140,3 +140,30 @@ internal data class AlbumDetailDto(
     val coverUrl: String = "",
     val songs: List<SongDto> = emptyList(),
 )
+
+/**
+ * 首页推送卡片（homeFeed 契约）：各音乐源可给出完全不同的首页大卡。
+ * action 决定点击行为，由宿主分发到对应页面/播放；songs 为该卡的可直接播放内容。
+ */
+@Serializable
+internal data class HomeCardDto(
+    val id: String = "",
+    val title: String = "",
+    val subtitle: String = "",
+    /** songs|daily|rank|square|playlist|toplist|album|artist|recent|downloads */
+    val action: String = "",
+    /** playlist/toplist/album/artist 的目标 id */
+    val targetId: String = "",
+    val coverUrl: String = "",
+    val songName: String = "",
+    val singers: String = "",
+    /** 卡片渐变起止色（#RRGGBB，可选；缺省由宿主按序轮换） */
+    val colorStart: String = "",
+    val colorEnd: String = "",
+    val songs: List<SongDto> = emptyList(),
+)
+
+@Serializable
+internal data class HomeFeedDto(
+    val cards: List<HomeCardDto> = emptyList(),
+)

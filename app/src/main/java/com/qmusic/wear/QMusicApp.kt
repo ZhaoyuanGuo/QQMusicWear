@@ -17,6 +17,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import coil3.ImageLoader
 import coil3.PlatformContext
@@ -66,6 +67,10 @@ object ServiceLocator {
     lateinit var lyricsCache: com.qmusic.wear.data.store.LyricsCache
         private set
 
+    /** QPlay/DLNA 渲染器（接收手机 QQ 音乐投放），按设置开关启停 */
+    var qplayServer: com.qmusic.wear.data.qplay.QPlayServer? = null
+        private set
+
     private val _credential = MutableStateFlow(Credential.EMPTY)
     val credential: StateFlow<Credential> = _credential.asStateFlow()
 
@@ -75,7 +80,11 @@ object ServiceLocator {
         credentialStore = CredentialStore(appContext)
         settingsStore = SettingsStore(appContext)
         historyStore = HistoryStore(appContext)
-        com.qmusic.wear.data.source.SourceManager.init(appContext, { _credential.value }) { raw ->
+        // 凭据按当前源读取（每次桥接调用时求值，切源后自动跟随）
+        com.qmusic.wear.data.source.SourceManager.init(
+            appContext,
+            { credentialStore.read(com.qmusic.wear.data.source.SourceManager.activeSource.id) },
+        ) { raw ->
             // 源插件全局事件：凭据过期 → 清除本地凭据并提示重登（仅登录态触发一次）
             if (raw.contains("CredentialExpired") && _credential.value.isLogged) {
                 onLogout()
@@ -99,26 +108,39 @@ object ServiceLocator {
         agreementStore = com.qmusic.wear.data.store.AgreementStore(appContext)
         lyricsCache = com.qmusic.wear.data.store.LyricsCache(appContext)
 
+        // QPlay 渲染器：跟随设置开关启停
+        qplayServer = com.qmusic.wear.data.qplay.QPlayServer(appContext, player)
         appScope.launch {
-            credentialStore.credentialFlow.collect { cred ->
-                val prev = _credential.value
-                // 保留已知昵称/头像，避免每次冷启动重复拉取
-                _credential.value = if (cred.isLogged && cred.nick.isEmpty() && prev.isLogged && prev.musicid == cred.musicid) {
-                    cred.copy(nick = prev.nick, avatarUrl = prev.avatarUrl)
-                } else cred
+            settingsStore.qplayEnabledFlow.collect { enabled ->
+                runCatching {
+                    if (enabled) qplayServer?.start() else qplayServer?.stop()
+                }.onFailure { CrashLog.log(it) }
+            }
+        }
+
+        // 当前源登录态：读取该源已存凭据（切换源即切换登录态）
+        _credential.value = credentialStore.read(com.qmusic.wear.data.source.SourceManager.activeSource.id)
+        // 桌面入口（名称+图标）随当前源
+        com.qmusic.wear.util.LauncherAlias.apply(appContext, com.qmusic.wear.data.source.SourceManager.activeSource.id)
+        appScope.launch {
+            com.qmusic.wear.data.source.SourceManager.activeSourceFlow.drop(1).collect { src ->
+                // 切换源：停播并清空队列（旧源歌曲无法用新源解析），随后切到该源凭据
+                runCatching { player.clearQueueAndStop() }.onFailure { CrashLog.log(it) }
+                _credential.value = credentialStore.read(src.id)
+                com.qmusic.wear.util.LauncherAlias.apply(appContext, src.id)
             }
         }
     }
 
     fun onLoginSuccess(cred: Credential) {
-        appScope.launch {
-            runCatching { credentialStore.save(cred) }.onFailure { CrashLog.log(it) }
-        }
+        runCatching {
+            credentialStore.save(com.qmusic.wear.data.source.SourceManager.activeSource.id, cred)
+        }.onFailure { CrashLog.log(it) }
         _credential.value = cred
     }
 
     fun onLogout() {
-        appScope.launch { credentialStore.clear() }
+        credentialStore.clear(com.qmusic.wear.data.source.SourceManager.activeSource.id)
         _credential.value = Credential.EMPTY
     }
 
@@ -132,9 +154,9 @@ object ServiceLocator {
         if (!cur.isLogged || cur.encryptUin.isNotEmpty()) return
         val merged = cur.copy(encryptUin = euin)
         _credential.value = merged
-        appScope.launch {
-            runCatching { credentialStore.save(merged) }.onFailure { CrashLog.log(it) }
-        }
+        runCatching {
+            credentialStore.save(com.qmusic.wear.data.source.SourceManager.activeSource.id, merged)
+        }.onFailure { CrashLog.log(it) }
     }
 
     fun appContextOrNull(): Context? = if (ServiceLocator::appContext.isInitialized) appContext else null

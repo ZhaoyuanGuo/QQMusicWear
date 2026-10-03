@@ -93,8 +93,13 @@ class QrLoginManager {
             when (type) {
                 "QrReady" -> {
                     val b64 = (obj["b64"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
-                    if (b64.isEmpty()) null
-                    else QrLoginEvent.QrReady(java.util.Base64.getDecoder().decode(b64))
+                    // 二选一：b64 = 源直接给的 PNG 字节；text = 二维码内容文本，由宿主渲染成图
+                    val text = (obj["text"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+                    when {
+                        b64.isNotEmpty() -> QrLoginEvent.QrReady(java.util.Base64.getDecoder().decode(b64))
+                        text.isNotEmpty() -> QrRenderer.render(text)?.let { QrLoginEvent.QrReady(it) }
+                        else -> null
+                    }
                 }
                 "WaitingScan" -> QrLoginEvent.WaitingScan
                 "ScannedConfirm" -> QrLoginEvent.ScannedConfirm

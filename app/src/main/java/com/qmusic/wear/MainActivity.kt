@@ -246,8 +246,11 @@ private fun AppRoot() {
                 SourceManager.ensureReady()
             }
         }
+        val activeSource by SourceManager.activeSourceFlow.collectAsStateWithLifecycle()
         SourceGateScreen(
             state = sourceState,
+            activeId = activeSource.id,
+            onSelect = { id -> retryScope.launch { SourceManager.selectSource(id) } },
             onRetry = { retryScope.launch { SourceManager.downloadNow() } },
             onImport = { importLauncher.launch(arrayOf("*/*")) },
         )
@@ -385,9 +388,40 @@ private fun AppRoot() {
                     albumMid = mid
                     screen = Screen.Album
                 },
-                onOpenDaily = { screen = Screen.Daily },
-                onOpenRank = { screen = Screen.Rank },
-                onOpenSquare = { screen = Screen.Square },
+                // 首页大卡动作分发（随音乐源变化，数量与类型不固定）
+                onOpenCard = { action, targetId, title ->
+                    when (action) {
+                        "daily", "songs" -> screen = Screen.Daily
+                        "rank" -> screen = Screen.Rank
+                        "square" -> screen = Screen.Square
+                        "playlist" -> {
+                            songListId = targetId.toLongOrNull() ?: 0L
+                            songListTitle = title
+                            songListFrom = Screen.Home
+                            screen = Screen.SongList
+                        }
+                        "toplist" -> {
+                            toplistId = targetId.toIntOrNull() ?: 0
+                            toplistTitle = title
+                            screen = Screen.Toplist
+                        }
+                        "album" -> {
+                            albumMid = targetId
+                            screen = Screen.Album
+                        }
+                        "artist" -> {
+                            artistMid = targetId
+                            artistName = title
+                            screen = Screen.Artist
+                        }
+                        "recent" -> screen = Screen.Recent
+                        "downloads" -> {
+                            downloadsFrom = Screen.Home
+                            screen = Screen.Downloads
+                        }
+                        else -> Unit
+                    }
+                },
             )
 
             // 播放页自带方向化手势（手指左滑歌词 / 右滑返回 / 上滑队列），不包 SwipeBackBox

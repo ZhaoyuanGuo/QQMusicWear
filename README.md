@@ -54,10 +54,11 @@ Wear OS 第三方 QQ 音乐客户端（Kotlin + Jetpack Compose for Wear OS + Me
 
 ## 安装
 
-前往 [Releases](https://github.com/ZhaoyuanGuo/QQMusicWear/releases/latest) 下载最新 APK（如 `QQMusicWear-v2.1.0.apk`），通过 adb 或文件传输安装到手表：
+前往 [Releases](https://github.com/ZhaoyuanGuo/QQMusicWear/releases/latest) 下载最新版本 APK（页顶 Release 徽章即当前最新版，文件名形如 `QQMusicWear-v<版本号>.apk`），通过 adb 或文件传输安装到手表：
 
 ```bash
-adb install QQMusicWear-v2.1.0.apk
+# 将文件名替换为你下载的最新版 APK
+adb install QQMusicWear-v<版本号>.apk
 ```
 
 首次启动会引导阅读用户协议，并从公开镜像下载音乐源插件（见下文）；若全部镜像不可用，可在门页或设置页「从存储导入」开发者发布的插件文件。
@@ -87,6 +88,33 @@ cd QQMusicWear
 或使用 Android Studio 打开项目直接运行。产物位于 `app/build/outputs/apk/release/`。
 
 **主要技术栈**：Kotlin、Jetpack Compose for Wear OS（Material 3）、Media3 / ExoPlayer、Coil、Rhino（JS 插件沙箱）、DataStore / SharedPreferences。
+
+### 本地验证
+
+提交前可在本地复现 CI 的全部质量门禁（单元测试 + 音乐源签名/契约校验），无需真机。
+
+前置环境：
+
+- **JDK 17+**：运行 Gradle 单元测试
+- **Node.js 20+**：运行音乐源签名校验与契约测试脚本
+
+运行单元测试：
+
+```bash
+./gradlew :app:testDebugUnitTest
+```
+
+本地复现契约测试门禁（与 CI `source-contract` 工作流等价，需依次执行以下两条命令）：
+
+```bash
+# 1) 校验音乐源插件的 Ed25519 签名（输出 VERIFY OK 表示通过）
+node tools/contract-test/verify_sig.js source/qmusic_source.js tools/source-signing/source_signing_public.key
+
+# 2) 以 mock 桥接加载插件，校验注册契约与 handler 齐全性（输出 CONTRACT OK 表示通过）
+node tools/contract-test/run.js source/qmusic_source.js
+```
+
+任一命令以非零码退出即表示门禁失败；两条命令均成功打印 `VERIFY OK` / `CONTRACT OK` 且退出码为 0，方可安全推送 `source/`。
 
 ## 使用限制
 

@@ -29,9 +29,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.hierarchicalFocusGroup
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
@@ -58,6 +59,7 @@ import androidx.wear.compose.material3.TimeText
 import coil3.compose.AsyncImage
 import com.qmusic.wear.R
 import com.qmusic.wear.ServiceLocator
+import com.qmusic.wear.data.model.HomeCard
 import com.qmusic.wear.ui.components.QmScreenScaffold
 import com.qmusic.wear.ui.components.edgeScalingParams
 import com.qmusic.wear.ui.components.qmRotarySnap
@@ -66,12 +68,9 @@ import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 import com.qmusic.wear.ui.mine.MineOverlay
 
 /**
- * 首页 = 纯推荐音乐大卡片流（借鉴手机版 QQ 音乐首页推荐板块，圆屏适配）：
- * - 「每日30首」大卡（品牌绿）：代表歌曲 + 播放键，点卡片进每日推荐列表
- * - 「猜你想听」大卡（紫）：随机开播推荐歌曲
- * - 「排行榜」大卡（橙）：巅峰榜/热歌/新歌等榜单入口
- * - 「歌单广场」大卡（蓝）：推荐/分类歌单入口
- * - 我喜欢/我的歌单等账号内容在右滑「我的」页
+ * 首页 = 推荐大卡片流（由当前音乐源的 homeFeed 契约给出，数量与内容随源变化）：
+ * 每张大卡含标题/副标题/封面/代表歌曲与动作；点击按 action 分发到对应页面或直接开播。
+ * 关闭/离线时退到「已下载音乐」。
  */
 @Composable
 fun HomeScreen(
@@ -82,9 +81,8 @@ fun HomeScreen(
     onOpenPlaylist: (Long, String) -> Unit,
     onOpenArtist: (String, String) -> Unit = { _, _ -> },
     onOpenAlbum: (String, String) -> Unit = { _, _ -> },
-    onOpenDaily: () -> Unit,
-    onOpenRank: () -> Unit,
-    onOpenSquare: () -> Unit,
+    /** 卡片动作分发：action / targetId / 标题 */
+    onOpenCard: (String, String, String) -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -152,88 +150,36 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     if (!offline) {
-                    // ---- 大卡 1：每日30首 ----
-                    item {
-                        val rep = now.song?.takeIf { s -> ui.songs.any { it.mid == s.mid } }
-                            ?: ui.songs.firstOrNull()
-                        BigCard(
-                            title = "每日30首",
-                            subtitle = if (ui.songs.isNotEmpty()) "为你推荐 · ${ui.songs.size} 首" else "正在加载…",
-                            coverUrl = rep?.cover300.orEmpty(),
-                            songName = rep?.name.orEmpty(),
-                            singers = rep?.singers.orEmpty(),
-                            playingThis = now.isPlaying && rep != null && now.song?.mid == rep.mid,
-                            loading = ui.loading && ui.songs.isEmpty(),
-                            colors = listOf(Color(0xFF1C2B22), Color(0xFF121813)),
-                            onToggle = {
-                                if (rep != null) {
-                                    if (now.song?.mid == rep.mid) {
-                                        ServiceLocator.player.togglePlayPause()
-                                    } else {
-                                        vm.playFrom(ui.songs, rep.mid)
-                                    }
-                                    onOpenPlayer()
-                                }
-                            },
-                            onOpen = onOpenDaily,
-                        )
-                    }
-
-                    // ---- 大卡 2：猜你想听（随机开播） ----
-                    if (ui.songs.isNotEmpty()) {
-                        item {
-                            val lucky = remember(ui.songs) { ui.songs.randomOrNull() }
+                        if (ui.loading && ui.cards.isEmpty()) {
+                            item { CircularProgressIndicator() }
+                        }
+                        items(ui.cards) { card ->
+                            val index = ui.cards.indexOf(card)
+                            val rep = card.songs.firstOrNull()
                             BigCard(
-                                title = "猜你想听",
-                                subtitle = "私人雷达",
-                                coverUrl = lucky?.cover300.orEmpty(),
-                                songName = lucky?.name.orEmpty(),
-                                singers = lucky?.singers.orEmpty(),
-                                playingThis = false,
-                                loading = false,
-                                colors = listOf(Color(0xFF232033), Color(0xFF15131D)),
-                                onToggle = {
-                                    lucky?.let {
-                                        vm.playFrom(ui.songs, it.mid)
-                                        onOpenPlayer()
-                                    }
+                                title = card.title,
+                                subtitle = card.subtitle.ifEmpty {
+                                    if (card.songs.isNotEmpty()) "为你推荐 · ${card.songs.size} 首" else ""
                                 },
-                                onOpen = onOpenDaily,
+                                coverUrl = card.coverUrl.ifEmpty { rep?.cover300.orEmpty() },
+                                songName = card.songName.ifEmpty { rep?.name.orEmpty() },
+                                singers = card.singers.ifEmpty { rep?.singers.orEmpty() },
+                                playingThis = now.isPlaying && rep != null && now.song?.mid == rep.mid,
+                                loading = ui.loading && card.songs.isEmpty(),
+                                colors = cardColors(card, index),
+                                onToggle = {
+                                    when {
+                                        rep != null && now.song?.mid == rep.mid ->
+                                            ServiceLocator.player.togglePlayPause()
+
+                                        rep != null -> vm.playFrom(card.songs, rep.mid)
+                                        else -> {}
+                                    }
+                                    if (rep != null) onOpenPlayer()
+                                },
+                                onOpen = { onOpenCard(card.action, card.targetId, card.title) },
                             )
                         }
-                    }
-
-                    // ---- 大卡 3：排行榜 ----
-                    item {
-                        BigCard(
-                            title = "排行榜",
-                            subtitle = "官方榜单",
-                            coverUrl = "",
-                            songName = "",
-                            singers = "",
-                            playingThis = false,
-                            loading = false,
-                            colors = listOf(Color(0xFF2E2318), Color(0xFF1B1510)),
-                            onToggle = onOpenRank,
-                            onOpen = onOpenRank,
-                        )
-                    }
-
-                    // ---- 大卡 4：歌单广场 ----
-                    item {
-                        BigCard(
-                            title = "歌单广场",
-                            subtitle = "官方精选歌单",
-                            coverUrl = "",
-                            songName = "",
-                            singers = "",
-                            playingThis = false,
-                            loading = false,
-                            colors = listOf(Color(0xFF1B2836), Color(0xFF111821)),
-                            onToggle = onOpenSquare,
-                            onOpen = onOpenSquare,
-                        )
-                    }
                     } else {
                         // ---- 离线模式：只保留可离线播放的能力 ----
                         item {
@@ -266,7 +212,7 @@ fun HomeScreen(
                                     singers = downloads.first().song.singers,
                                     playingThis = false,
                                     loading = false,
-                                    colors = listOf(Color(0xFF1C2B22), Color(0xFF121813)),
+                                    colors = cardColors(null, 0),
                                     onToggle = {
                                         ServiceLocator.player.playFromList(
                                             downloads.map { it.song },
@@ -315,8 +261,16 @@ fun HomeScreen(
     }
 }
 
-/** 官方风格卡片配色轮换（紫/橙/蓝/青，备用） */
-private val cardColors = listOf(
+/** 卡片渐变：优先源给定配色，否则按序轮换官方风配色（紫/橙/蓝/青） */
+private fun cardColors(card: HomeCard?, index: Int): List<Color> {
+    val start = card?.colorStart
+    val end = card?.colorEnd
+    if (start != null && end != null) return listOf(Color(start), Color(end))
+    return cardPalette[index % cardPalette.size]
+}
+
+/** 官方风格卡片配色轮换（紫/橙/蓝/青） */
+private val cardPalette = listOf(
     listOf(Color(0xFF232033), Color(0xFF15131D)),
     listOf(Color(0xFF2E2318), Color(0xFF1B1510)),
     listOf(Color(0xFF1B2836), Color(0xFF111821)),
@@ -453,7 +407,7 @@ private fun BigCard(
             Spacer(Modifier.size(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = songName.ifEmpty { "点击播放" },
+                    text = songName.ifEmpty { "点击进入" },
                     style = MaterialTheme.typography.labelMedium,
                     color = Color.White,
                     maxLines = 1,

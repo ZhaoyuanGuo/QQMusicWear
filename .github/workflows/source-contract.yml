@@ -5,12 +5,12 @@ on:
   push:
     branches: [main]
     paths:
-      - 'source/qmusic_source.js'
+      - 'source/**'
       - 'tools/**'
       - '.github/workflows/source-contract.yml'
   pull_request:
     paths:
-      - 'source/qmusic_source.js'
+      - 'source/**'
       - 'tools/**'
       - '.github/workflows/source-contract.yml'
 
@@ -24,8 +24,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Verify source signature
-        run: node tools/contract-test/verify_sig.js source/qmusic_source.js tools/source-signing/source_signing_public.key
-
-      - name: Run contract test
-        run: node tools/contract-test/run.js source/qmusic_source.js
+      - name: Verify source signature & contract (all sources)
+        run: |
+          set -e
+          for f in source/*_source.js; do
+            echo "===== $f ====="
+            node tools/contract-test/verify_sig.js "$f" tools/source-signing/source_signing_public.key
+            node tools/contract-test/run.js "$f"
+            node tools/contract-test/mock_smoke.js "$f"
+          done

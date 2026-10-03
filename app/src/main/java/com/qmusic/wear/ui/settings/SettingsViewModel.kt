@@ -30,6 +30,8 @@ data class SettingsUiState(
     val keepScreenOn: Boolean = false,
     /** 低配置设备模式：关闭特效/削减动画，低端手表更流畅 */
     val lowPerf: Boolean = false,
+    /** QPlay 投放：手表出现在手机 QQ 音乐的 QPlay 设备列表 */
+    val qplayEnabled: Boolean = false,
     /** 显示形态（方表/圆表 UI 覆盖，全 app 布局跟随） */
     val uiShape: UiShape = UiShape.AUTO,
     /** 播放页进度样式（六选一，默认液体填充） */
@@ -42,6 +44,15 @@ data class SettingsUiState(
     val sourceVersion: Int = 0,
     /** 源更新状态：null=空闲，""=更新中，非空=结果提示 */
     val sourceUpdateMessage: String? = null,
+    /** 全部可选音乐源 */
+    val sources: List<com.qmusic.wear.data.source.MusicSource> =
+        com.qmusic.wear.data.source.SourceRegistry.sources,
+    /** 当前音乐源 id */
+    val activeSourceId: String = com.qmusic.wear.data.source.SourceRegistry.default.id,
+    /** 当前音乐源展示名 */
+    val activeSourceName: String = com.qmusic.wear.data.source.SourceRegistry.default.displayName,
+    /** 切源进行中 */
+    val sourceSwitching: Boolean = false,
 )
 
 class SettingsViewModel : ViewModel() {
@@ -54,6 +65,16 @@ class SettingsViewModel : ViewModel() {
         viewModelScope.launch {
             ServiceLocator.credential.collect { load() }
         }
+        // 切换音乐源后同步展示名/版本
+        viewModelScope.launch {
+            com.qmusic.wear.data.source.SourceManager.activeSourceFlow.collect { src ->
+                _ui.value = _ui.value.copy(
+                    activeSourceId = src.id,
+                    activeSourceName = com.qmusic.wear.data.source.SourceManager.displayNameFlow.value,
+                    sourceVersion = com.qmusic.wear.data.source.SourceManager.currentVersion(),
+                )
+            }
+        }
     }
 
     fun load() {
@@ -64,9 +85,12 @@ class SettingsViewModel : ViewModel() {
                 launchToastEnabled = ServiceLocator.settingsStore.launchToastFlow.value,
                 keepScreenOn = ServiceLocator.settingsStore.keepScreenOnFlow.value,
                 lowPerf = ServiceLocator.settingsStore.lowPerfFlow.value,
+                qplayEnabled = ServiceLocator.settingsStore.qplayEnabledFlow.value,
                 uiShape = ServiceLocator.settingsStore.uiShapeFlow.value,
                 progressStyle = ServiceLocator.settingsStore.progressStyleFlow.value,
                 sourceVersion = com.qmusic.wear.data.source.SourceManager.currentVersion(),
+                activeSourceId = com.qmusic.wear.data.source.SourceManager.activeSource.id,
+                activeSourceName = com.qmusic.wear.data.source.SourceManager.displayNameFlow.value,
             )
             val cred = ServiceLocator.credential.value
             if (cred.isLogged) {
@@ -120,6 +144,11 @@ class SettingsViewModel : ViewModel() {
     fun setLowPerf(enabled: Boolean) {
         _ui.value = _ui.value.copy(lowPerf = enabled)
         ServiceLocator.settingsStore.setLowPerf(enabled)
+    }
+
+    fun setQPlayEnabled(enabled: Boolean) {
+        _ui.value = _ui.value.copy(qplayEnabled = enabled)
+        ServiceLocator.settingsStore.setQPlayEnabled(enabled)
     }
 
     /** 显示形态（方表/圆表）：立即生效，全 app 布局跟随切换 */
@@ -186,6 +215,36 @@ class SettingsViewModel : ViewModel() {
 
     fun dismissLogExport() {
         _ui.value = _ui.value.copy(logExportMessage = null)
+    }
+
+    /**
+     * 切换音乐源：加载/下载目标源脚本，切换后端到端跟随（主题色/登录态/首页推送）。
+     * 结果经 Toast 提示。
+     */
+    fun selectSource(id: String) {
+        if (id == _ui.value.activeSourceId || _ui.value.sourceSwitching) return
+        val target = com.qmusic.wear.data.source.SourceRegistry.byId(id)
+        _ui.value = _ui.value.copy(
+            sourceSwitching = true,
+            activeSourceId = id,
+            activeSourceName = target.displayName,
+            sourceUpdateMessage = "",
+        )
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val ok = runCatching {
+                com.qmusic.wear.data.source.SourceManager.selectSource(id)
+            }.getOrDefault(false)
+            _ui.value = _ui.value.copy(
+                sourceSwitching = false,
+                activeSourceName = com.qmusic.wear.data.source.SourceManager.displayNameFlow.value,
+                sourceVersion = com.qmusic.wear.data.source.SourceManager.currentVersion(),
+                sourceUpdateMessage = if (ok) {
+                    "已切换到 ${com.qmusic.wear.data.source.SourceManager.displayNameFlow.value}"
+                } else {
+                    "源加载失败：镜像不可达"
+                },
+            )
+        }
     }
 
     /** 更新音乐源：从镜像重新下载并重载引擎，结果经 Toast 提示 */

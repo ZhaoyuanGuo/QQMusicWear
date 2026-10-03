@@ -22,7 +22,7 @@ val LocalLowPerf = staticCompositionLocalOf { false }
 /** 屏幕形状：true=圆表（如 Galaxy Watch 450x450），false=方表（如小米手表 368x448） */
 val LocalIsRoundScreen = staticCompositionLocalOf { false }
 
-// QQ 音乐品牌绿
+// 品牌色兜底（QQ 音乐绿）：实际品牌色随当前音乐源 manifest.themeColor 动态切换
 val QmGreen = Color(0xFF31C27C)
 val QmGreenDim = Color(0xFF1E8F5A)
 // 页面底色：纯黑——卡片之间的背景在 OLED 上完全不发光（省电且沉浸）；QmInk 保留作次要深色
@@ -44,6 +44,11 @@ fun QMusicTheme(content: @Composable () -> Unit) {
         UiShape.ROUND -> true
         UiShape.AUTO -> cfg.isScreenRound
     }
+    // 品牌色：随当前音乐源切换（酷狗蓝 / 网易云红 / QQ 绿 / 番茄橙）
+    val brandArgb by com.qmusic.wear.data.source.SourceManager.themeColorFlow.collectAsStateWithLifecycle()
+    val brand = Color(brandArgb)
+    // 容器色 = 品牌色压暗（保证白字对比度）
+    val brandDim = androidx.compose.ui.graphics.lerp(Color.Black, brand, 0.62f)
     val density = LocalDensity.current
     // 方表窄屏字号补偿：小米方表 368px@2.0=184dp，圆表 450px@2.0=225dp，同为 320dpi 下
     // 同一 sp 字号物理大小相同，但方表屏窄，字号相对占比大 ~22%，观感偏大且更早触发截断。
@@ -55,9 +60,9 @@ fun QMusicTheme(content: @Composable () -> Unit) {
     ) {
         // 在 Wear OS 默认深色方案上注入品牌色（M3 Expressive / One UI Watch 风格）
         val scheme = MaterialTheme.colorScheme.copy(
-            primary = QmGreen,
+            primary = brand,
             onPrimary = Color.Black,
-            primaryContainer = QmGreenDim,
+            primaryContainer = brandDim,
             onPrimaryContainer = Color.White,
             secondary = Color(0xFF5AD2E0),
             onSecondary = Color.Black,
