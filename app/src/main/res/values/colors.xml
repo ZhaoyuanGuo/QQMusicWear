@@ -6,6 +6,6 @@
     <!-- 各音乐源的图标底色（中性音符前景，不涉及对方商标） -->
     <color name="ic_bg_qq">#FF31C27C</color>
     <color name="ic_bg_kugou">#FF2BA3F0</color>
+    <color name="ic_bg_kugou_concept">#FF4FC3F7</color>
     <color name="ic_bg_netease">#FFE23B2E</color>
-    <color name="ic_bg_fanqie">#FFFF6A3D</color>
 </resources>

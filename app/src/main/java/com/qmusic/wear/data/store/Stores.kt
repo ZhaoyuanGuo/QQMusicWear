@@ -141,9 +141,12 @@ class SettingsStore(context: Context) {
         _uiShapeFlow.value = shape
     }
 
-    /** 播放页进度样式（六选一，默认液体填充） */
+    /**
+     * 播放页进度样式（六选一）：null = 用户从未显式选择，
+     * 由调用方按屏幕形态取默认值（圆表=经典屏幕边缘环、方表=液体填充）。
+     */
     private val _progressStyleFlow = MutableStateFlow(readProgressStyle())
-    val progressStyleFlow: StateFlow<ProgressStyle> = _progressStyleFlow.asStateFlow()
+    val progressStyleFlow: StateFlow<ProgressStyle?> = _progressStyleFlow.asStateFlow()
 
     fun setProgressStyle(style: ProgressStyle) {
         prefs.edit().putString(KEY_PROGRESS_STYLE, style.name).apply()
@@ -154,9 +157,11 @@ class SettingsStore(context: Context) {
         runCatching { UiShape.valueOf(prefs.getString(KEY_UI_SHAPE, UiShape.AUTO.name)!!) }
             .getOrDefault(UiShape.AUTO)
 
-    private fun readProgressStyle(): ProgressStyle =
-        runCatching { ProgressStyle.valueOf(prefs.getString(KEY_PROGRESS_STYLE, ProgressStyle.LIQUID.name)!!) }
-            .getOrDefault(ProgressStyle.LIQUID)
+    /** 只读取用户显式选择过的值；未选择过返回 null（默认值由屏幕形态决定，见 defaultProgressStyle） */
+    private fun readProgressStyle(): ProgressStyle? =
+        prefs.getString(KEY_PROGRESS_STYLE, null)?.let { name ->
+            runCatching { ProgressStyle.valueOf(name) }.getOrNull()
+        }
 
     private fun readPlayMode(): PlayMode =
         runCatching { PlayMode.valueOf(prefs.getString(KEY_PLAY_MODE, PlayMode.SEQUENTIAL.name)!!) }

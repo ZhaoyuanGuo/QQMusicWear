@@ -34,8 +34,8 @@ data class SettingsUiState(
     val qplayEnabled: Boolean = false,
     /** 显示形态（方表/圆表 UI 覆盖，全 app 布局跟随） */
     val uiShape: UiShape = UiShape.AUTO,
-    /** 播放页进度样式（六选一，默认液体填充） */
-    val progressStyle: ProgressStyle = ProgressStyle.LIQUID,
+    /** 播放页进度样式（六选一）；null = 未显式选择，按屏幕形态取默认值 */
+    val progressStyle: ProgressStyle? = null,
     /** 缓存清理状态：null=空闲，""=清理中，非空=结果提示 */
     val cacheClearMessage: String? = null,
     /** 日志提取状态：null=空闲，""=提取中，非空=结果提示 */

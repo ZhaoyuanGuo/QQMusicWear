@@ -11,8 +11,16 @@ import com.qmusic.wear.data.api.lyric
 import com.qmusic.wear.data.api.lyricRoma
 import com.qmusic.wear.data.api.lyricTrans
 import com.qmusic.wear.data.api.albumSongs
+import com.qmusic.wear.data.api.artistAlbums
 import com.qmusic.wear.data.api.artistSongs
+import com.qmusic.wear.data.api.cloudSongs
+import com.qmusic.wear.data.api.djPrograms
+import com.qmusic.wear.data.api.djRadios
 import com.qmusic.wear.data.api.musicHallShelves
+import com.qmusic.wear.data.api.radioSongs
+import com.qmusic.wear.data.api.songComments
+import com.qmusic.wear.data.api.userEvents
+import com.qmusic.wear.data.api.userFollows
 import com.qmusic.wear.data.api.myPlaylists
 import com.qmusic.wear.data.api.playlistDetail
 import com.qmusic.wear.data.api.recommendNewSongs
@@ -21,12 +29,18 @@ import com.qmusic.wear.data.api.toplistSongs
 import com.qmusic.wear.data.api.toplists
 import com.qmusic.wear.data.api.userProfile
 import com.qmusic.wear.data.model.AlbumDetail
+import com.qmusic.wear.data.model.AlbumItem
+import com.qmusic.wear.data.model.DjProgram
+import com.qmusic.wear.data.model.FollowUser
 import com.qmusic.wear.data.model.HomeCard
 import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.Quality
+import com.qmusic.wear.data.model.RadioStation
 import com.qmusic.wear.data.model.ResolvedUrl
 import com.qmusic.wear.data.model.SearchResult
 import com.qmusic.wear.data.model.Song
+import com.qmusic.wear.data.model.SongComments
+import com.qmusic.wear.data.model.UserEvent
 import com.qmusic.wear.data.model.UserProfile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -80,7 +94,7 @@ class MusicRepository(
         emptyList()
     }
 
-    suspend fun toplistSongs(topId: Int): List<Song> = try {
+    suspend fun toplistSongs(topId: Long): List<Song> = try {
         api.toplistSongs(topId)
     } catch (t: Throwable) {
         emptyList()
@@ -139,6 +153,42 @@ class MusicRepository(
     /** 专辑详情；失败返回 null */
     suspend fun albumSongs(albumMid: String): AlbumDetail? =
         runCatching { api.albumSongs(albumMid) }.getOrNull()
+
+    // ---- 新增可选能力（源不支持/未登录时统一返回空，页面据此显示空态） ----
+
+    /** 歌手专辑列表（分页）；失败返回空列表 */
+    suspend fun artistAlbums(singerMid: String, offset: Int): Pair<List<AlbumItem>, Boolean> =
+        runCatching { api.artistAlbums(singerMid, offset) }
+            .getOrDefault(emptyList<AlbumItem>() to false)
+
+    /** 私人FM / 私人漫游；失败返回空列表 */
+    suspend fun radioSongs(): List<Song> =
+        runCatching { api.radioSongs() }.getOrDefault(emptyList())
+
+    /** 播客 / 电台列表；失败返回空列表 */
+    suspend fun djRadios(): List<RadioStation> =
+        runCatching { api.djRadios() }.getOrDefault(emptyList())
+
+    /** 电台节目列表；失败返回空列表 */
+    suspend fun djPrograms(radioId: Long): List<DjProgram> =
+        runCatching { api.djPrograms(radioId) }.getOrDefault(emptyList())
+
+    /** 歌曲评论；失败返回空结果 */
+    suspend fun songComments(song: Song, offset: Int = 0): SongComments =
+        runCatching { api.songComments(song.songId, song.mid, song.name, offset) }
+            .getOrDefault(SongComments())
+
+    /** 云盘；失败返回空列表 */
+    suspend fun cloudSongs(): List<Song> =
+        runCatching { api.cloudSongs() }.getOrDefault(emptyList())
+
+    /** 用户动态；失败返回空列表 */
+    suspend fun userEvents(uid: Long): List<UserEvent> =
+        runCatching { api.userEvents(uid) }.getOrDefault(emptyList())
+
+    /** 关注的人；失败返回空列表 */
+    suspend fun userFollows(uid: Long): List<FollowUser> =
+        runCatching { api.userFollows(uid) }.getOrDefault(emptyList())
 
     suspend fun searchSongs(query: String): List<Song> =
         searchAll(query).songs
@@ -207,7 +257,7 @@ class MusicRepository(
     /** 加入/移出「我喜欢」：登录走云端，未登录落本地红心（登录后自动合并） */
     suspend fun setLiked(song: Song, like: Boolean): Boolean {
         if (api.credentialProvider().isLogged) {
-            val ok = api.setLike(song.songId, like)
+            val ok = api.setLike(song, like)
             if (ok) {
                 _likedMids.value = if (like) {
                     _likedMids.value + song.mid
@@ -233,7 +283,7 @@ class MusicRepository(
         if (local.isEmpty()) return
         val failedMids = mutableListOf<String>()
         local.forEach { s ->
-            val ok = runCatching { api.setLike(s.songId, true) }.getOrDefault(false)
+            val ok = runCatching { api.setLike(s, true) }.getOrDefault(false)
             if (!ok) failedMids.add(s.mid)
         }
         if (failedMids.size < local.size) {

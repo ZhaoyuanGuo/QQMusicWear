@@ -8,6 +8,7 @@
 'use strict';
 const fs = require('fs');
 const crypto = require('crypto');
+const zlib = require('zlib');
 
 const scriptPath = process.argv[2];
 if (!scriptPath) {
@@ -46,6 +47,15 @@ const REQUIRED_HANDLERS = [
 const SAFE_HANDLERS = REQUIRED_HANDLERS.filter((n) => n !== 'qrLogin' && n !== 'ping');
 
 /**
+ * 可选 handler（新增能力）：源"实现了"才试调，不实现不报错。
+ * 这样 QQ 源无需回填这些能力即可通过 CI。
+ */
+const OPTIONAL_HANDLERS = [
+  'artistAlbums', 'radioSongs', 'heartMode', 'djRadios', 'djPrograms',
+  'songComments', 'cloudSongs', 'userEvents', 'userFollows',
+];
+
+/**
  * qmu.http 契约：宿主桥接返回 JSON 字符串，脚本内 http() 对其 JSON.parse。
  * mock 必须返回字符串以匹配实际运行时行为。
  */
@@ -63,6 +73,21 @@ global.qmu = {
     musicid: 0, musickey: '', strMusicid: '', encryptUin: '', nick: '', avatarUrl: '',
   }),
   md5: (s) => crypto.createHash('md5').update(String(s), 'utf8').digest('hex'),
+  // 宿主新增的 AES/RSA 桥接原语（与 APK 侧 SourceEngine 对应）
+  aesCbcHex: () => '0'.repeat(64),
+  // 真实 AES-CBC 解密：mock 端与源脚本协议可回环验证（key/iv 按 Latin1 取字节）
+  aesCbcDecryptB64: (b64, key, iv) => {
+    try {
+      const k = Buffer.from(String(key), 'latin1');
+      const d = crypto.createDecipheriv(`aes-${k.length * 8}-cbc`, k, Buffer.from(String(iv), 'latin1'));
+      return Buffer.concat([d.update(Buffer.from(String(b64), 'base64')), d.final()]).toString('utf8');
+    } catch (e) { return ''; }
+  },
+  inflateB64: (b64) => {
+    try { return zlib.inflateSync(Buffer.from(String(b64), 'base64')).toString('utf8'); }
+    catch (e) { return ''; }
+  },
+  rsaNoPadHex: () => '0'.repeat(256),
   b64decode: (s) => Buffer.from(String(s), 'base64').toString('utf8'),
   sleep: () => {},
   log: () => {},
@@ -109,6 +134,24 @@ if (registered && typeof registered.handlers.ping === 'function') {
 // 4) 安全 handler 试调（mock 数据结构完整；handler 抛异常或返回 undefined 视为逻辑缺陷，阻断门禁）
 if (registered) {
   for (const name of SAFE_HANDLERS) {
+    const fn = registered.handlers[name];
+    if (typeof fn !== 'function') continue;
+    try {
+      const out = fn({});
+      if (out === undefined) {
+        fail(name + '() 返回 undefined，handler 必须有明确返回值');
+        continue;
+      }
+      JSON.stringify(out);
+    } catch (e) {
+      fail(name + '() 抛出异常: ' + e.message);
+    }
+  }
+}
+
+// 5) 可选 handler 试调（源实现才试调；未实现不算失败）
+if (registered) {
+  for (const name of OPTIONAL_HANDLERS) {
     const fn = registered.handlers[name];
     if (typeof fn !== 'function') continue;
     try {

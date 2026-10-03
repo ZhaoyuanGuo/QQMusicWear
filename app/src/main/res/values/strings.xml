@@ -5,8 +5,8 @@
     <!-- 各音乐源对应的桌面名称（activity-alias 标签，随源切换） -->
     <string name="app_name_qq">QQ音乐</string>
     <string name="app_name_kugou">酷狗音乐</string>
+    <string name="app_name_kugou_concept">酷狗概念版</string>
     <string name="app_name_netease">网易云音乐</string>
-    <string name="app_name_fanqie">番茄畅听</string>
 
     <!-- 无障碍描述 -->
     <string name="cd_prev">上一首</string>

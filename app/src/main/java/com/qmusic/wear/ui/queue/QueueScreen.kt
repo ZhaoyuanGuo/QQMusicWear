@@ -46,6 +46,7 @@ import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import com.qmusic.wear.ui.components.QmScreenScaffold
 import com.qmusic.wear.ui.components.edgeScalingParams
+import com.qmusic.wear.ui.components.qmAutoCentering
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import coil3.compose.AsyncImage
@@ -116,12 +117,15 @@ fun QueueScreen(
 
     SwipeBackBox(onBack = onBack) {
         // 磁音队列页没有进度环，这里按需求额外加上我们自己的边缘环形进度条
-        EdgeProgressRing(
-            progress = progress,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(5.dp),
-        )
+        // 仅圆表显示：方表下画出的椭圆弧不符合视觉效果
+        if (isRound) {
+            EdgeProgressRing(
+                progress = progress,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(5.dp),
+            )
+        }
         QmScreenScaffold(
             scrollState = listState,
             timeText = { TimeText() },
@@ -133,6 +137,7 @@ fun QueueScreen(
                 // 必须关闭内置表冠支持，否则两套 focusTarget 抢焦点
                 rotaryScrollableBehavior = null,
                 contentPadding = contentPadding,
+                autoCentering = qmAutoCentering(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier.fillMaxSize().rotaryCustom(crownBehavior),

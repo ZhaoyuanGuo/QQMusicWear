@@ -76,13 +76,13 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityNetease"
+            android:name=".MainActivityKugouConcept"
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
-            android:label="@string/app_name_netease"
-            android:icon="@mipmap/ic_launcher_netease"
-            android:roundIcon="@mipmap/ic_launcher_netease">
+            android:label="@string/app_name_kugou_concept"
+            android:icon="@mipmap/ic_launcher_kugou_concept"
+            android:roundIcon="@mipmap/ic_launcher_kugou_concept">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -90,13 +90,13 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityFanqie"
+            android:name=".MainActivityNetease"
             android:targetActivity=".MainActivity"
             android:exported="true"
             android:enabled="false"
-            android:label="@string/app_name_fanqie"
-            android:icon="@mipmap/ic_launcher_fanqie"
-            android:roundIcon="@mipmap/ic_launcher_fanqie">
+            android:label="@string/app_name_netease"
+            android:icon="@mipmap/ic_launcher_netease"
+            android:roundIcon="@mipmap/ic_launcher_netease">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

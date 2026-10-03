@@ -44,7 +44,7 @@ fun QMusicTheme(content: @Composable () -> Unit) {
         UiShape.ROUND -> true
         UiShape.AUTO -> cfg.isScreenRound
     }
-    // 品牌色：随当前音乐源切换（酷狗蓝 / 网易云红 / QQ 绿 / 番茄橙）
+    // 品牌色：随当前音乐源切换（酷狗蓝 / 网易云红 / QQ 绿）
     val brandArgb by com.qmusic.wear.data.source.SourceManager.themeColorFlow.collectAsStateWithLifecycle()
     val brand = Color(brandArgb)
     // 容器色 = 品牌色压暗（保证白字对比度）

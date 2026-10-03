@@ -21,8 +21,8 @@ object LauncherAlias {
     private val ALIASES = mapOf(
         "qmusic-web" to "com.qmusic.wear.MainActivityQq",
         "kugou-web" to "com.qmusic.wear.MainActivityKugou",
+        "kugou-concept-web" to "com.qmusic.wear.MainActivityKugouConcept",
         "netease-web" to "com.qmusic.wear.MainActivityNetease",
-        "fanqie-web" to "com.qmusic.wear.MainActivityFanqie",
     )
 
     /** 应用当前源对应的桌面入口；与上次一致则跳过 */

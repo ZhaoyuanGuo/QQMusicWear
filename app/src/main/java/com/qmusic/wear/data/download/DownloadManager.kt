@@ -208,6 +208,8 @@ class DownloadManager(context: Context, private val http: okhttp3.OkHttpClient) 
                     mediaMid = obj.str("mediaMid"),
                     intervalSec = obj.int("intervalSec"),
                     songType = obj.int("songType"),
+                    cover300 = obj.str("cover300"),
+                    cover500 = obj.str("cover500"),
                 ),
                 filePath = obj.str("filePath"),
                 prefix = obj.str("prefix"),
@@ -230,6 +232,9 @@ class DownloadManager(context: Context, private val http: okhttp3.OkHttpClient) 
                     put("mediaMid", d.song.mediaMid)
                     put("intervalSec", d.song.intervalSec)
                     put("songType", d.song.songType)
+                    // 封面必须落盘：否则重启后下载管理里的歌曲没有封面图
+                    put("cover300", d.song.cover300)
+                    put("cover500", d.song.cover500)
                     put("filePath", d.filePath)
                     put("prefix", d.prefix)
                     put("sizeBytes", d.sizeBytes)

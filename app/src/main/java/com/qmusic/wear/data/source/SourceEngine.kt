@@ -13,9 +13,13 @@ import org.mozilla.javascript.Context
 import org.mozilla.javascript.NativeObject
 import org.mozilla.javascript.Scriptable
 import org.mozilla.javascript.ScriptableObject
+import java.math.BigInteger
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -60,6 +64,14 @@ class SourceEngine(
     @Volatile
     private var manifestJson: String = "{}"
 
+    /**
+     * 源脚本实际注册的 handler 名集合。
+     * 用于宿主的「能力探测」：未实现的可选能力（播客/动态/评论等）在 UI 上直接不显示，
+     * 而不是进去看空列表。以注册表为唯一事实来源，源升级后无需改宿主。
+     */
+    @Volatile
+    private var handlerNames: Set<String> = emptySet()
+
     private var scope: Scriptable? = null
 
     /**
@@ -76,11 +88,17 @@ class SourceEngine(
             cx.evaluateString(s, script, "qmusic_source.js", 1, null)
             manifestJson = cx.evaluateString(s, "JSON.stringify(__source_manifest__ || {})", "manifest", 1, null)
                 ?.toString().orEmpty().ifEmpty { "{}" }
+            handlerNames = cx.evaluateString(
+                s, "JSON.stringify(Object.keys(__source_handlers__ || {}))", "handlers", 1, null,
+            )?.toString().let(::parseNames)
             manifestJson
         } finally {
             Context.exit()
         }
     }
+
+    /** 源已注册的 handler 名（未加载时为空集） */
+    fun registeredHandlers(): Set<String> = handlerNames
 
     /** 调用源脚本注册的处理器，返回 JSON 字符串（结果为 JSON.stringify 产物） */
     suspend fun call(name: String, argsJson: String): String = withContext(dispatcher) {
@@ -124,7 +142,8 @@ class SourceEngine(
             })
         }
 
-        // qmu.http(method, url, headersJson, body, contentType, followRedirects) -> json
+        // qmu.http(method, url, headersJson, body, contentType, followRedirects, bodyB64) -> json
+        // bodyB64：可选的原始字节请求体（base64）；非空时优先生效（酷狗 cloudlist 的 AES 密文包体）。
         putFn("http") { args ->
             val method = args.getOrNull(0)?.toString() ?: "GET"
             val url = args.getOrNull(1)?.toString().orEmpty()
@@ -132,7 +151,8 @@ class SourceEngine(
             val body = args.getOrNull(3)?.toString()
             val contentType = args.getOrNull(4)?.toString()
             val follow = (args.getOrNull(5) as? Boolean) ?: true
-            httpRequest(method, url, headersJson, body, contentType, follow)
+            val bodyB64 = args.getOrNull(6)?.toString()
+            httpRequest(method, url, headersJson, body, contentType, follow, bodyB64)
         }
 
         // qmu.credential() -> json
@@ -145,6 +165,86 @@ class SourceEngine(
             val input = (args.getOrNull(0)?.toString() ?: "").toByteArray(Charsets.UTF_8)
             val bytes = MessageDigest.getInstance("MD5").digest(input)
             bytes.joinToString("") { "%02x".format(it) }
+        }
+
+        // qmu.aesCbcHex(plain, key, iv) -> hex
+        // AES/CBC/PKCS7；key/iv 按 ISO-8859-1（即 JS 的 Latin1，等价于逐字符取码位）
+        // 转为字节，与酷狗 web 端 crypto-js 的 enc.Latin1.parse() 行为一致。
+        putFn("aesCbcHex") { args ->
+            val plain = args.getOrNull(0)?.toString().orEmpty()
+            val key = args.getOrNull(1)?.toString().orEmpty()
+            val iv = args.getOrNull(2)?.toString().orEmpty()
+            val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+            cipher.init(
+                Cipher.ENCRYPT_MODE,
+                SecretKeySpec(key.toByteArray(Charsets.ISO_8859_1), "AES"),
+                IvParameterSpec(iv.toByteArray(Charsets.ISO_8859_1)),
+            )
+            val out = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
+            out.joinToString("") { "%02x".format(it) }
+        }
+
+        // qmu.aesCbcDecryptB64(b64, key, iv) -> utf8 明文字符串
+        // AES/CBC/PKCS5 解密；key/iv 按 ISO-8859-1 取字节（与 aesCbcHex 一致）。
+        // 异常返回空串：绝不把 Java 异常抛穿 Rhino（与 httpRequest 的同类约定一致）。
+        putFn("aesCbcDecryptB64") { args ->
+            runCatching {
+                val b64 = args.getOrNull(0)?.toString().orEmpty()
+                val key = args.getOrNull(1)?.toString().orEmpty()
+                val iv = args.getOrNull(2)?.toString().orEmpty()
+                val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+                cipher.init(
+                    Cipher.DECRYPT_MODE,
+                    SecretKeySpec(key.toByteArray(Charsets.ISO_8859_1), "AES"),
+                    IvParameterSpec(iv.toByteArray(Charsets.ISO_8859_1)),
+                )
+                String(cipher.doFinal(Base64.getDecoder().decode(b64)), Charsets.UTF_8)
+            }.getOrElse { e ->
+                Log.w("SourceEngine", "aesCbcDecryptB64 失败: ${e.message}")
+                ""
+            }
+        }
+
+        // qmu.inflateB64(b64) -> utf8 字符串（zlib 解压；酷狗 KRC 歌词解码用）
+        putFn("inflateB64") { args ->
+            runCatching {
+                val input = Base64.getDecoder().decode(args.getOrNull(0)?.toString().orEmpty())
+                val inflater = java.util.zip.Inflater()
+                try {
+                    inflater.setInput(input)
+                    val out = java.io.ByteArrayOutputStream()
+                    val buf = ByteArray(4096)
+                    while (!inflater.finished()) {
+                        val n = inflater.inflate(buf)
+                        if (n <= 0) break
+                        out.write(buf, 0, n)
+                    }
+                    String(out.toByteArray(), Charsets.UTF_8)
+                } finally {
+                    inflater.end()
+                }
+            }.getOrElse { e ->
+                Log.w("SourceEngine", "inflateB64 失败: ${e.message}")
+                ""
+            }
+        }
+
+        // qmu.rsaNoPadHex(plain, modulusHex, exponentHex) -> hex
+        // 裸 RSA（NoPadding）：明文对齐到块（模数字节数）的高位、低位补零后按大端
+        // 整数做 m^e mod n，输出定长 hex。与酷狗 web 端 jsbn 移植版行为一致。
+        putFn("rsaNoPadHex") { args ->
+            val plain = args.getOrNull(0)?.toString().orEmpty()
+            val modHex = args.getOrNull(1)?.toString().orEmpty()
+            val expHex = args.getOrNull(2)?.toString().orEmpty()
+            val n = BigInteger(modHex, 16)
+            val e = BigInteger(expHex, 16)
+            val size = (n.bitLength() + 7) / 8 // 块字节数（1024bit -> 128）
+            val raw = plain.toByteArray(Charsets.ISO_8859_1)
+            val block = ByteArray(size) // 低位默认 0
+            raw.copyInto(block, 0, 0, minOf(raw.size, size))
+            val hex = BigInteger(1, block).modPow(e, n).toString(16)
+            val width = size * 2
+            if (hex.length < width) "0".repeat(width - hex.length) + hex else hex
         }
 
         // qmu.b64decode(s) -> utf8 字符串（歌词解码等）
@@ -194,20 +294,27 @@ class SourceEngine(
         body: String?,
         contentType: String?,
         followRedirects: Boolean,
+        bodyB64: String? = null,
     ): String {
         val builder = Request.Builder().url(url)
         Jsons.parseToMap(headersJson).forEach { (k, v) -> builder.header(k, v) }
+        // 原始字节请求体（base64）优先；解码失败留日志并回退文本 body。
+        // 文本 body 经 toRequestBody() 会按 UTF-8 编码，二进制密文必须走 bodyB64 通道。
+        val rawBytes = bodyB64?.takeIf { it.isNotEmpty() }?.let { b64 ->
+            runCatching { Base64.getDecoder().decode(b64) }.getOrElse { e ->
+                Log.w("SourceEngine", "bodyB64 解码失败，回退文本 body: ${e.message}")
+                null
+            }
+        }
+        fun requestBody(fallbackType: String) = if (rawBytes != null) {
+            rawBytes.toRequestBody((contentType ?: fallbackType).toMediaType())
+        } else {
+            (body ?: "").toRequestBody((contentType ?: fallbackType).toMediaType())
+        }
         when (method.uppercase()) {
-            "POST" -> builder.post(
-                (body ?: "").toRequestBody(
-                    (contentType ?: "application/json; charset=utf-8").toMediaType(),
-                ),
-            )
+            "POST" -> builder.post(requestBody("application/json; charset=utf-8"))
             "GET" -> builder.get()
-            else -> builder.method(
-                method.uppercase(),
-                body?.toRequestBody((contentType ?: "text/plain").toMediaType()),
-            )
+            else -> builder.method(method.uppercase(), requestBody("text/plain"))
         }
         val client = if (followRedirects) clientFollow else clientNoRedirect
         // 网络异常（含 TLS 校验失败）必须转成错误响应返回，绝不能把 Java 异常抛穿到 Rhino：
@@ -232,6 +339,13 @@ class SourceEngine(
         }
     }
 }
+
+/** 解析 JSON.stringify 出的字符串数组（失败返回空集，绝不抛异常） */
+private fun parseNames(raw: String?): Set<String> = runCatching {
+    (kotlinx.serialization.json.Json.parseToJsonElement(raw.orEmpty()) as kotlinx.serialization.json.JsonArray)
+        .mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+        .toSet()
+}.getOrDefault(emptySet())
 
 /** 轻量 JSON 工具（桥接层专用） */
 internal object Jsons {
@@ -266,7 +380,9 @@ data class CredentialSnapshot(
     val encryptUin: String = "",
     val nick: String = "",
     val avatarUrl: String = "",
-) {
-    // 多源：非 QQ 源的用户 id 未必是数字，登录态以「会话密钥非空」为准
-    val isLogged: Boolean get() = musickey.isNotEmpty()
-}
+    /**
+     * 登录态：必须作为**可序列化字段**下发。
+     * 计算属性不会进入 JSON，源脚本读 c.isLogged 会得到 undefined（曾导致酷狗 userProfile 恒返回 null）。
+     */
+    val isLogged: Boolean = false,
+)

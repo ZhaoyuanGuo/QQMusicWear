@@ -21,6 +21,7 @@ import androidx.wear.compose.material3.AlertDialog
 import androidx.wear.compose.material3.MaterialTheme
 import com.qmusic.wear.ui.components.QmScreenScaffold
 import com.qmusic.wear.ui.components.edgeScalingParams
+import com.qmusic.wear.ui.components.qmAutoCentering
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
 import androidx.wear.compose.material3.TimeText
@@ -55,6 +56,7 @@ fun DownloadsScreen(
             state = listState,
             rotaryScrollableBehavior = qmRotarySnap(listState),
             contentPadding = contentPadding,
+            autoCentering = qmAutoCentering(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxSize(),

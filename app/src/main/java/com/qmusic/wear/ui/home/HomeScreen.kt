@@ -62,6 +62,7 @@ import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.data.model.HomeCard
 import com.qmusic.wear.ui.components.QmScreenScaffold
 import com.qmusic.wear.ui.components.edgeScalingParams
+import com.qmusic.wear.ui.components.qmAutoCentering
 import com.qmusic.wear.ui.components.qmRotarySnap
 import com.qmusic.wear.ui.components.rememberHaptics
 import com.qmusic.wear.ui.theme.LocalIsRoundScreen
@@ -81,6 +82,8 @@ fun HomeScreen(
     onOpenPlaylist: (Long, String) -> Unit,
     onOpenArtist: (String, String) -> Unit = { _, _ -> },
     onOpenAlbum: (String, String) -> Unit = { _, _ -> },
+    onOpenPodcast: () -> Unit = {},
+    onOpenSocial: () -> Unit = {},
     /** 卡片动作分发：action / targetId / 标题 */
     onOpenCard: (String, String, String) -> Unit,
     vm: HomeViewModel = viewModel(),
@@ -111,6 +114,8 @@ fun HomeScreen(
         QmScreenScaffold(
             scrollState = listState,
             timeText = { TimeText() },
+            // 「我的」页打开时隐藏首页指示条，避免与其自带的指示条同位置叠画两根
+            showScrollIndicator = !showMenu,
         ) { contentPadding ->
             Box(
                 Modifier
@@ -145,6 +150,7 @@ fun HomeScreen(
                         top = contentPadding.calculateTopPadding() + 8.dp,
                         bottom = contentPadding.calculateBottomPadding() + 30.dp,
                     ),
+                    autoCentering = qmAutoCentering(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize(),
@@ -255,6 +261,8 @@ fun HomeScreen(
                         showMenu = false
                         onOpenAlbum(mid, name)
                     },
+                    onOpenPodcast = { showMenu = false; onOpenPodcast() },
+                    onOpenSocial = { showMenu = false; onOpenSocial() },
                 )
             }
         }

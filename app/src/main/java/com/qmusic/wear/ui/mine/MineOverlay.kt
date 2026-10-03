@@ -6,28 +6,13 @@ import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.wear.compose.foundation.hierarchicalFocusGroup
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.ScalingLazyListState
-import androidx.wear.compose.foundation.lazy.items
-import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,47 +22,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.compose.foundation.hierarchicalFocusGroup
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.CircularProgressIndicator
-import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.Text
-import com.qmusic.wear.R
 import com.qmusic.wear.ServiceLocator
-import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.SearchResult
-import com.qmusic.wear.data.model.Song
-import com.qmusic.wear.ui.components.GlassPanel
 import com.qmusic.wear.ui.components.SquareScrollIndicator
-import com.qmusic.wear.ui.components.edgeScalingParams
-import com.qmusic.wear.ui.components.GlassRow
-import com.qmusic.wear.ui.components.qmRotarySnap
+import com.qmusic.wear.ui.components.edgeListHorizontalInset
 import com.qmusic.wear.ui.components.rememberHaptics
-import com.qmusic.wear.ui.components.PageTitle
-import com.qmusic.wear.ui.components.PlaylistRow
-import com.qmusic.wear.ui.components.RoundCover
-import com.qmusic.wear.ui.components.SectionHeader
-import com.qmusic.wear.ui.components.SquareCover
-import com.qmusic.wear.ui.components.edgeListPadding
-import com.qmusic.wear.ui.components.edgeScalingParams
 import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 
 /**
  * 「我的」页（每日推荐页右滑出现）：
  * 顶部搜索栏（歌曲/歌手/歌单） + 我的喜欢 / 最近播放 / 我的歌单 / 下载管理 / 设置。
- * 输入即搜索；左滑/右滑关闭（左滑=返回上一级）。
+ * 输入完按键盘搜索键（或点放大镜）才发起搜索，避免拼音候选上屏被打断；左滑/右滑关闭（左滑=返回上一级）。
+ *
+ * 列表主体见 [MineTabs]，搜索结果见 [SearchResults]，搜索栏见 [MineSearchField]。
  */
 @Composable
 fun MineOverlay(
@@ -89,6 +57,8 @@ fun MineOverlay(
     onOpenPlaylist: (Long, String) -> Unit,
     onOpenArtist: (String, String) -> Unit = { _, _ -> },
     onOpenAlbum: (String, String) -> Unit = { _, _ -> },
+    onOpenPodcast: () -> Unit = {},
+    onOpenSocial: () -> Unit = {},
     vm: MineViewModel = viewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -113,7 +83,7 @@ fun MineOverlay(
             ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             ?.firstOrNull()
         if (result.resultCode == Activity.RESULT_OK && !text.isNullOrBlank()) {
-            vm.onQueryChange(text)
+            vm.submitSearch(text)
         }
     }
     val launchVoice: () -> Unit = {
@@ -131,6 +101,11 @@ fun MineOverlay(
     // 列表状态提升到顶层：指示条/刻度振动需要跟随当前活跃列表（主列表 或 搜索结果）
     val mineListState = rememberScalingLazyListState()
     val searchListState = rememberScalingLazyListState()
+    val isRoundScreen = LocalIsRoundScreen.current
+    // 搜索结果页：搜索框/标签条与上下内容之间的间距（圆表顶部弧区窄，收一档）
+    val headerGap = if (isRoundScreen) 4.dp else 6.dp
+    // 固定头部与下方结果列表同宽（复用列表的横向防弧边内缩）
+    val headerInset = edgeListHorizontalInset()
 
     Box(
         Modifier
@@ -140,7 +115,7 @@ fun MineOverlay(
             // 纯黑底（OLED 不发光）：必须全不透明，否则下层页面的模糊封面会透出来
             .background(MaterialTheme.colorScheme.background)
             // 圆表两侧防弧边留白；方表收窄用满 245dp 级别的窄宽度
-            .padding(horizontal = if (LocalIsRoundScreen.current) 12.dp else 2.dp)
+            .padding(horizontal = if (isRoundScreen) 12.dp else 2.dp)
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onHorizontalDrag = { change, amount ->
@@ -165,20 +140,14 @@ fun MineOverlay(
             },
     ) {
         Column(
-            Modifier
-                .fillMaxSize(),
+            Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             when {
                 // 主列表：搜索栏与搜索历史放进列表，随内容滚动（往下滑即跟随上移，不再悬浮）
                 // 结果页不放页标题：省出顶部空间给结果列表
                 search.query.isBlank() -> Box(Modifier.weight(1f)) {
-                    Column(Modifier.fillMaxSize()) {
-                        Spacer(Modifier.height(10.dp))
-                        PageTitle("我的")
-                        Spacer(Modifier.height(8.dp))
-                        Box(Modifier.weight(1f)) {
-                            MineTabs(
+                    MineTabs(
                         listState = mineListState,
                         ui = ui,
                         recentCount = recent.size,
@@ -187,27 +156,45 @@ fun MineOverlay(
                         query = search.query,
                         onQueryChange = { typing = true; vm.onQueryChange(it) },
                         onVoiceSearch = launchVoice,
+                        onSearch = { typing = true; vm.submitSearch() },
                         history = history,
-                        onPickHistory = { typing = false; vm.onQueryChange(it) },
+                        onPickHistory = { typing = false; vm.submitSearch(it) },
                         onOpenLiked = { liked -> onOpenPlaylist(liked.disstid, liked.name) },
                         onOpenRecent = onOpenRecent,
                         onOpenPlaylist = onOpenPlaylist,
                         onOpenDownloads = onOpenDownloads,
                         onOpenSettings = onOpenSettings,
-                        )
-                        }
-                    }
+                        onOpenPodcast = onOpenPodcast,
+                        onOpenSocial = onOpenSocial,
+                    )
                 }
 
                 search.searching -> Box(Modifier.weight(1f)) {
+                    SearchHeaderAndLoading(
+                        query = search.query,
+                        onQueryChange = { typing = true; vm.onQueryChange(it) },
+                        onVoiceSearch = launchVoice,
+                        onSearch = { typing = true; vm.submitSearch() },
+                        fieldFocus = fieldFocus,
+                        headerInset = headerInset,
+                        headerGap = headerGap,
+                        typing = typing,
+                        onTypingConsumed = { typing = false },
+                        keyboardShow = { keyboard?.show() },
+                    )
+                }
+
+                else -> Box(Modifier.weight(1f)) {
                     Column(Modifier.fillMaxSize()) {
-                        Spacer(Modifier.height(6.dp))
-                        // 结果页搜索栏固定顶部，便于修改关键词
+                        Spacer(Modifier.height(headerGap))
                         MineSearchField(
                             query = search.query,
                             onQueryChange = { typing = true; vm.onQueryChange(it) },
                             onVoiceSearch = launchVoice,
-                            modifier = Modifier.focusRequester(fieldFocus),
+                            onSearch = { typing = true; vm.submitSearch() },
+                            modifier = Modifier
+                                .focusRequester(fieldFocus)
+                                .padding(horizontal = headerInset),
                         )
                         LaunchedEffect(Unit) {
                             // 从主列表打字切换过来时恢复焦点与键盘（搜索栏换了挂载点）
@@ -217,30 +204,7 @@ fun MineOverlay(
                                 typing = false
                             }
                         }
-                        Spacer(Modifier.height(6.dp))
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
-                    }
-                }
-
-                else -> Box(Modifier.weight(1f)) {
-                    Column(Modifier.fillMaxSize()) {
-                        Spacer(Modifier.height(6.dp))
-                        MineSearchField(
-                            query = search.query,
-                            onQueryChange = { typing = true; vm.onQueryChange(it) },
-                            onVoiceSearch = launchVoice,
-                            modifier = Modifier.focusRequester(fieldFocus),
-                        )
-                        LaunchedEffect(Unit) {
-                            if (typing) {
-                                fieldFocus.requestFocus()
-                                keyboard?.show()
-                                typing = false
-                            }
-                        }
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(headerGap))
                         SearchResults(
                             listState = searchListState,
                             result = search.result ?: SearchResult(),
@@ -297,603 +261,42 @@ fun MineOverlay(
     }
 }
 
-/**
- * 搜索栏（歌曲/歌手/歌单）+ 右侧语音入口：
- * 麦克风加大为深色圆底按钮（此前灰色裸图标过小、难以发现和点中）。
- */
+/** 搜索中：固定顶部搜索栏 + 居中加载圈（切换挂载点时按需恢复焦点与键盘） */
 @Composable
-private fun MineSearchField(
+private fun SearchHeaderAndLoading(
     query: String,
     onQueryChange: (String) -> Unit,
     onVoiceSearch: () -> Unit,
-    modifier: Modifier = Modifier,
+    onSearch: () -> Unit,
+    fieldFocus: FocusRequester,
+    headerInset: androidx.compose.ui.unit.Dp,
+    headerGap: androidx.compose.ui.unit.Dp,
+    typing: Boolean,
+    onTypingConsumed: () -> Unit,
+    keyboardShow: () -> Unit,
 ) {
-    BasicTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        singleLine = true,
-        textStyle = TextStyle(
-            color = MaterialTheme.colorScheme.onSurface,
-            fontSize = MaterialTheme.typography.bodyMedium.fontSize,
-        ),
-        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f))
-            .border(0.5.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(50))
-            .padding(horizontal = 12.dp, vertical = 9.dp),
-        decorationBox = { inner ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_search),
-                    contentDescription = "搜索",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.size(8.dp))
-                if (query.isEmpty()) {
-                    Text(
-                        "搜索歌曲/歌手/歌单",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                // 文本编辑区占剩余宽度，麦克风固定在右侧
-                Box(Modifier.weight(1f)) { inner() }
-                // 语音搜索：34dp 深色圆底 + 18dp 图标（命中区与视觉一致）
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.40f))
-                        .border(0.5.dp, Color.White.copy(alpha = 0.16f), CircleShape)
-                        .clickable(onClick = onVoiceSearch),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_mic),
-                        contentDescription = "语音搜索",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-        },
-    )
-}
-
-/** 「我的」页主体：搜索栏/历史 → 异常提示 → 我的喜欢 → 最近播放 → 我的歌单 → 下载管理 → 设置 */
-@Composable
-private fun MineTabs(
-    listState: ScalingLazyListState,
-    ui: MineUiState,
-    recentCount: Int,
-    sessionBad: Boolean,
-    logged: Boolean,
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onVoiceSearch: () -> Unit,
-    history: List<String>,
-    onPickHistory: (String) -> Unit,
-    onOpenLiked: (Playlist) -> Unit,
-    onOpenRecent: () -> Unit,
-    onOpenPlaylist: (Long, String) -> Unit,
-    onOpenDownloads: () -> Unit,
-    onOpenSettings: () -> Unit,
-) {
-    // 听歌统计（本地数据）
-    val stats = ServiceLocator.playStats.weekStats.collectAsStateWithLifecycle().value
-    // ScalingLazyColumn：圆屏自适应缩放 + 居中锚点，与首页/队列页滚动体验一致；
-    // 表冠滚动走内置支持（外挂 rotaryScrollable 会与内置焦点协调抢焦点，已废弃）
-    ScalingLazyColumn(
-        Modifier
-            .fillMaxWidth(),
-        rotaryScrollableBehavior = qmRotarySnap(listState),
-        contentPadding = edgeListPadding(),
-        scalingParams = edgeScalingParams(),
-        state = listState,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        // 搜索栏/搜索历史随列表滚动：往下滑即跟随上移，不再悬浮占位
-        item {
-            MineSearchField(query = query, onQueryChange = onQueryChange, onVoiceSearch = onVoiceSearch)
-        }
-        if (history.isNotEmpty()) {
-            item {
-                SearchHistoryRow(
-                    history = history,
-                    onPick = onPickHistory,
-                    onClear = { ServiceLocator.searchHistory.clear() },
-                )
-            }
-        }
-        // 登录状态异常：凭据过期或接口全部拉取失败
-        if (sessionBad) {
-            item {
-                GlassRow(onClick = onOpenSettings) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_user),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(17.dp),
-                    )
-                    Spacer(Modifier.size(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "登录可能已过期",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                        Text(
-                            "点击去设置重新扫码登录",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-
-        // 未登录提示：登录入口在设置里
-        // （按本地凭据判断而非 profile 加载结果——profile 接口失败时账号仍是登录态，不能误报）
-        if (!logged) {
-            item {
-                GlassRow(onClick = onOpenSettings) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_user),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(17.dp),
-                    )
-                    Spacer(Modifier.size(10.dp))
-                    Text(
-                        "未登录 · 去设置登录",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        // ---- 我的喜欢 ----
-        ui.likedPlaylist?.let { liked ->
-            item {
-                GlassRow(onClick = { onOpenLiked(liked) }) {
-                    SquareCover(url = liked.picUrl, size = 42.dp, corner = 12.dp)
-                    Spacer(Modifier.size(9.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "我的喜欢",
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        Text(
-                            text = "${liked.songCount}首",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(
-                        painter = painterResource(R.drawable.ic_heart),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(15.dp),
-                    )
-                }
-            }
-        }
-
-        // ---- 听歌统计（本地数据） ----
-        if (stats.playCount > 0) {
-            item {
-                val hours = stats.totalSec / 3600
-                val mins = (stats.totalSec % 3600) / 60
-                val durText = when {
-                    hours > 0 -> "${hours}小时${mins}分钟"
-                    mins > 0 -> "${mins}分钟"
-                    else -> "刚刚开始"
-                }
-                GlassPanel {
-                    Column(Modifier.fillMaxWidth()) {
-                        // 拆行显示避免长文案在圆屏折行：标题行 + 数值行 + 最常听
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_history),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(17.dp),
-                            )
-                            Spacer(Modifier.size(10.dp))
-                            Text(
-                                "本周已听",
-                                style = MaterialTheme.typography.labelLarge,
-                            )
-                        }
-                        Spacer(Modifier.size(3.dp))
-                        Text(
-                            "$durText · ${stats.playCount}次",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = 27.dp),
-                        )
-                        if (stats.topName.isNotEmpty()) {
-                            Spacer(Modifier.size(2.dp))
-                            Text(
-                                "最常听：${stats.topName} · ${stats.topSingers}（${stats.topCount}次）",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(start = 27.dp),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // ---- 最近播放 ----
-        item {
-            GlassRow(onClick = onOpenRecent) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_history),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(17.dp),
-                )
-                Spacer(Modifier.size(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "最近播放",
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    Text(
-                        text = if (recentCount == 0) "本地播放记录" else "最近播放 ${recentCount}首",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        // ---- 我的歌单 ----
-        if (ui.favPlaylists.isNotEmpty()) {
-            item { SectionHeader("我的歌单") }
-            items(ui.favPlaylists) { pl ->
-                PlaylistRow(
-                    name = pl.name,
-                    coverUrl = pl.picUrl,
-                    songCount = pl.songCount,
-                    creatorNick = pl.creatorNick,
-                    onClick = { onOpenPlaylist(pl.disstid, pl.name) },
-                )
-            }
-        }
-
-        // ---- 下载管理 ----
-        item {
-            GlassRow(onClick = onOpenDownloads) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_download),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(17.dp),
-                )
-                Spacer(Modifier.size(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "下载管理",
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    Text(
-                        "长按删除歌曲",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        // ---- 设置 ----
-        item {
-            GlassRow(onClick = onOpenSettings) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_settings),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(17.dp),
-                )
-                Spacer(Modifier.size(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "设置",
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    Text(
-                        "音质与账号",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        item { Spacer(Modifier.height(4.dp)) }
-    }
-}
-
-@Composable
-private fun SearchResults(
-    listState: ScalingLazyListState,
-    result: SearchResult,
-    onPlaySong: (Song) -> Unit,
-    onPlayAll: (List<Song>) -> Unit,
-    onOpenArtist: (com.qmusic.wear.data.model.Singer) -> Unit,
-    onOpenAlbumOfSong: (Song) -> Unit,
-    onOpenPlaylist: (Playlist) -> Unit,
-) {
-    val empty = result.songs.isEmpty() && result.singers.isEmpty() && result.playlists.isEmpty()
-    if (empty) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                "没有找到相关内容",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        return
-    }
-
-    // 固定三选项卡（歌曲/歌手/歌单），置于搜索栏与结果之间；无结果的分区显示空态
-    data class Tab(val label: String, val count: Int)
-    val tabs = listOf(
-        Tab("歌曲", result.songs.size),
-        Tab("歌手", result.singers.size),
-        Tab("歌单", result.playlists.size),
-    )
-    var sel by remember(result) { mutableStateOf(0) }
-    val selIndex = if (sel >= tabs.size) 0 else sel
-
     Column(Modifier.fillMaxSize()) {
-        // 分区选择条
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            tabs.forEachIndexed { i, tab ->
-                ResultTab(
-                    label = tab.label,
-                    count = tab.count,
-                    selected = i == selIndex,
-                    onClick = { sel = i },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-
-        val current = tabs[selIndex]
-        if (current.count == 0) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    "没有找到相关${current.label}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            return@Column
-        }
-
-        when (current.label) {
-            "歌手" -> ScalingLazyColumn(
-                state = listState,
-                rotaryScrollableBehavior = qmRotarySnap(listState),
-                contentPadding = edgeListPadding(),
-                scalingParams = edgeScalingParams(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(result.singers) { singer ->
-                    GlassRow(onClick = { onOpenArtist(singer) }) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_user),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.size(8.dp))
-                        SearchResultTexts(title = singer.name, subtitle = "查看歌曲")
-                    }
-                }
-            }
-
-            "歌单" -> ScalingLazyColumn(
-                state = listState,
-                rotaryScrollableBehavior = qmRotarySnap(listState),
-                contentPadding = edgeListPadding(),
-                scalingParams = edgeScalingParams(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(result.playlists) { pl ->
-                    GlassRow(onClick = { onOpenPlaylist(pl) }) {
-                        RoundCover(url = pl.picUrl, size = 30.dp)
-                        Spacer(Modifier.size(8.dp))
-                        SearchResultTexts(
-                            title = pl.name,
-                            subtitle = "${pl.songCount}首 · ${pl.creatorNick}",
-                        )
-                    }
-                }
-            }
-
-            else -> ScalingLazyColumn(
-                contentPadding = edgeListPadding(),
-                scalingParams = edgeScalingParams(),
-                state = listState,
-                rotaryScrollableBehavior = qmRotarySnap(listState),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                item { ListHeader2("歌曲") { onPlayAll(result.songs) } }
-                items(result.songs) { song ->
-                    GlassRow(
-                        onClick = { onPlaySong(song) },
-                        onLongClick = { onOpenAlbumOfSong(song) },
-                    ) {
-                        RoundCover(url = song.cover300, size = 30.dp)
-                        Spacer(Modifier.size(8.dp))
-                        SearchResultTexts(title = song.name, subtitle = song.singers)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 搜索分区切换片（选中=主题色底，未选中=玻璃底）：紧凑胶囊，压低高度给结果列表让位 */
-@Composable
-private fun ResultTab(
-    label: String,
-    count: Int,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-            .heightIn(min = 26.dp)
-            .clip(RoundedCornerShape(50))
-            .background(
-                if (selected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f)
-                },
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-    ) {
-        Text(
-            if (count > 0) "$label $count" else label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
-private fun androidx.compose.foundation.layout.RowScope.SearchResultTexts(
-    title: String,
-    subtitle: String,
-) {
-    Column(Modifier.weight(1f)) {
-        Text(
-            title,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            subtitle,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/** 搜索历史：标题行（含清除）+ 换行排布的关键词胶囊 */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun SearchHistoryRow(
-    history: List<String>,
-    onPick: (String) -> Unit,
-    onClear: () -> Unit,
-) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Row(
+        Spacer(Modifier.height(headerGap))
+        // 结果页搜索栏固定顶部，便于修改关键词
+        MineSearchField(
+            query = query,
+            onQueryChange = onQueryChange,
+            onVoiceSearch = onVoiceSearch,
+            onSearch = onSearch,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "最近搜索",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                "清除",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                // 外扩命中区（视觉不变）
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { onClear() }
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-            )
-        }
-        androidx.compose.foundation.layout.FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-            history.take(6).forEach { h ->
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.42f))
-                        .clickable { onPick(h) }
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                ) {
-                    Text(
-                        h,
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                .focusRequester(fieldFocus)
+                .padding(horizontal = headerInset),
+        )
+        LaunchedEffect(Unit) {
+            if (typing) {
+                fieldFocus.requestFocus()
+                keyboardShow()
+                onTypingConsumed()
             }
         }
-    }
-}
-
-@Composable
-private fun ListHeader2(title: String, playAll: (() -> Unit)? = null) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            title,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.weight(1f))
-        if (playAll != null) {
-            Text(
-                "播放全部",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.clickable { playAll() },
-            )
+        Spacer(Modifier.height(headerGap))
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
         }
     }
 }

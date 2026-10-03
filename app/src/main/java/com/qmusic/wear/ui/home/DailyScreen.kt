@@ -2,7 +2,6 @@ package com.qmusic.wear.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,7 +19,9 @@ import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
 import com.qmusic.wear.ui.components.QmScreenScaffold
+import com.qmusic.wear.ui.components.edgeContentPadding
 import com.qmusic.wear.ui.components.edgeScalingParams
+import com.qmusic.wear.ui.components.qmAutoCentering
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.ServiceLocator
@@ -58,10 +59,8 @@ fun DailyScreen(
             scalingParams = edgeScalingParams(),
             state = listState,
             rotaryScrollableBehavior = qmRotarySnap(listState),
-            contentPadding = PaddingValues(
-                top = contentPadding.calculateTopPadding(),
-                bottom = contentPadding.calculateBottomPadding() + 60.dp,
-            ),
+            contentPadding = edgeContentPadding(contentPadding, bottomExtra = 60.dp),
+            autoCentering = qmAutoCentering(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxSize(),

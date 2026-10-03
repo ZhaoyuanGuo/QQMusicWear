@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,7 +33,9 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import com.qmusic.wear.ui.components.QmScreenScaffold
+import com.qmusic.wear.ui.components.edgeContentPadding
 import com.qmusic.wear.ui.components.edgeScalingParams
+import com.qmusic.wear.ui.components.qmAutoCentering
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.R
@@ -45,7 +46,7 @@ import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.Song
 import com.qmusic.wear.ui.components.GlassRow
 import com.qmusic.wear.ui.components.PageTitle
-import com.qmusic.wear.ui.components.PlayAllChip
+import com.qmusic.wear.ui.components.PlaylistHeader
 import com.qmusic.wear.ui.components.PlaylistRow
 import com.qmusic.wear.ui.components.RoundCover
 import com.qmusic.wear.ui.components.SectionHeader
@@ -67,7 +68,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun RankScreen(
-    onOpenToplist: (Int, String) -> Unit,
+    onOpenToplist: (Long, String, String) -> Unit,
 ) {
     val listState = rememberScalingLazyListState()
     var loading by remember { mutableStateOf(true) }
@@ -83,10 +84,8 @@ fun RankScreen(
             scalingParams = edgeScalingParams(),
             state = listState,
             rotaryScrollableBehavior = qmRotarySnap(listState),
-            contentPadding = PaddingValues(
-                top = contentPadding.calculateTopPadding(),
-                bottom = contentPadding.calculateBottomPadding() + 30.dp,
-            ),
+            contentPadding = edgeContentPadding(contentPadding, bottomExtra = 30.dp),
+            autoCentering = qmAutoCentering(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxSize(),
@@ -105,7 +104,7 @@ fun RankScreen(
                 }
             } else {
                 items(lists) { t ->
-                    GlassRow(onClick = { onOpenToplist(t.topId, t.title) }) {
+                    GlassRow(onClick = { onOpenToplist(t.topId, t.title, t.picUrl) }) {
                         SquareCover(url = t.picUrl, size = 42.dp, corner = 10.dp)
                         Spacer(Modifier.size(9.dp))
                         Column(Modifier.weight(1f)) {
@@ -142,13 +141,15 @@ fun RankScreen(
 
 @Composable
 fun ToplistScreen(
-    topId: Int,
+    topId: Long,
     title: String,
+    coverUrl: String = "",
     onOpenPlayer: () -> Unit,
 ) {
     val now by ServiceLocator.player.state.collectAsStateWithLifecycle()
     val likedMids by ServiceLocator.repository.likedMids.collectAsStateWithLifecycle()
     val downloadedSet by ServiceLocator.downloads.downloadsFlow.collectAsStateWithLifecycle()
+    val batch by ServiceLocator.downloads.batch.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberScalingLazyListState()
@@ -168,26 +169,34 @@ fun ToplistScreen(
         }
     }
 
+    fun downloadAll() {
+        if (songs.isEmpty()) return
+        ServiceLocator.downloads.enqueueBatch(songs) { song ->
+            ServiceLocator.repository.resolveForDownload(song, ServiceLocator.settingsStore.downloadQuality())
+        }
+    }
+
     QmScreenScaffold(scrollState = listState, timeText = { TimeText() }) { contentPadding ->
         ScalingLazyColumn(
             scalingParams = edgeScalingParams(),
             state = listState,
             rotaryScrollableBehavior = qmRotarySnap(listState),
-            contentPadding = PaddingValues(
-                top = contentPadding.calculateTopPadding(),
-                bottom = contentPadding.calculateBottomPadding() + 30.dp,
-            ),
+            contentPadding = edgeContentPadding(contentPadding, bottomExtra = 30.dp),
+            autoCentering = qmAutoCentering(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
             item {
-                PageTitle(title)
-                if (songs.isNotEmpty()) {
-                    Spacer(Modifier.height(4.dp))
-                    // 与歌单详情页同款玻璃小胶囊（此前实心绿大按钮风格突兀且遮挡标题）
-                    PlayAllChip(onClick = { playAll() })
-                }
+                // 与歌单详情页同款头卡：封面 + 标题 + 数量徽章 + 播放/下载全部
+                PlaylistHeader(
+                    title = title,
+                    coverUrl = coverUrl.ifEmpty { songs.firstOrNull()?.cover500.orEmpty() },
+                    songCount = songs.size,
+                    onPlayAll = if (songs.isEmpty()) null else { { playAll() } },
+                    onDownloadAll = if (songs.isEmpty()) null else { { downloadAll() } },
+                    downloadPending = batch.running && batch.total > 0,
+                )
             }
 
             if (loading) {
@@ -252,10 +261,8 @@ fun SquareScreen(
             scalingParams = edgeScalingParams(),
             state = listState,
             rotaryScrollableBehavior = qmRotarySnap(listState),
-            contentPadding = PaddingValues(
-                top = contentPadding.calculateTopPadding(),
-                bottom = contentPadding.calculateBottomPadding() + 30.dp,
-            ),
+            contentPadding = edgeContentPadding(contentPadding, bottomExtra = 30.dp),
+            autoCentering = qmAutoCentering(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxSize(),

@@ -27,7 +27,13 @@ jobs:
       - name: Verify source signature & contract (all sources)
         run: |
           set -e
-          for f in source/*_source.js; do
+          shopt -s nullglob
+          files=(source/*_source.js)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "source/ 不在仓库中（音乐源脚本仅通过 CDN 分发），跳过契约测试"
+            exit 0
+          fi
+          for f in "${files[@]}"; do
             echo "===== $f ====="
             node tools/contract-test/verify_sig.js "$f" tools/source-signing/source_signing_public.key
             node tools/contract-test/run.js "$f"

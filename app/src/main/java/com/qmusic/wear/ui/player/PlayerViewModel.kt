@@ -10,8 +10,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** 下载状态（播放页下载按钮） */
+/** 下载状态（播放页下载按钮）；mid 标记该状态属于哪首歌，避免切歌后串台 */
 data class DownloadUi(
+    val mid: String = "",
     val running: Boolean = false,
     val progress: Float = 0f,
     val done: Boolean = false,
@@ -54,13 +55,13 @@ class PlayerViewModel : ViewModel() {
         val song = ServiceLocator.player.state.value.song ?: return
         if (ServiceLocator.downloads.isDownloaded(song.mid)) {
             _ui.value = _ui.value.copy(
-                download = DownloadUi(done = true, message = "已下载"),
+                download = DownloadUi(mid = song.mid, done = true, message = "已下载"),
             )
             return
         }
         viewModelScope.launch {
             _ui.value = _ui.value.copy(
-                download = DownloadUi(running = true, progress = 0f),
+                download = DownloadUi(mid = song.mid, running = true, progress = 0f),
             )
             try {
                 val quality = ServiceLocator.settingsStore.downloadQuality()
@@ -68,15 +69,18 @@ class PlayerViewModel : ViewModel() {
                     ?: error("无法获取下载地址（可能需要登录或 VIP）")
                 ServiceLocator.downloads.download(song, resolved) { p ->
                     _ui.value = _ui.value.copy(
-                        download = DownloadUi(running = true, progress = p),
+                        download = DownloadUi(mid = song.mid, running = true, progress = p),
                     )
                 }
                 _ui.value = _ui.value.copy(
-                    download = DownloadUi(done = true, message = "下载完成"),
+                    download = DownloadUi(mid = song.mid, done = true, message = "下载完成"),
                 )
             } catch (t: Throwable) {
                 _ui.value = _ui.value.copy(
-                    download = DownloadUi(message = t.message?.take(40) ?: "下载失败"),
+                    download = DownloadUi(
+                        mid = song.mid,
+                        message = t.message?.take(40) ?: "下载失败",
+                    ),
                 )
             }
         }
@@ -129,6 +133,21 @@ class PlayerViewModel : ViewModel() {
     fun currentQualityLabel(qualityPrefix: String): String {
         if (qualityPrefix.isEmpty()) return "标准"
         return com.qmusic.wear.data.source.SourceManager.prefixToQuality[qualityPrefix]?.label ?: "标准"
+    }
+
+    /** 当前实际播放音质（由解析出的文件名前缀判定）；无法判定时回退到设置档位 */
+    fun actualQuality(qualityPrefix: String, fallback: Quality): Quality =
+        com.qmusic.wear.data.source.SourceManager.prefixToQuality[qualityPrefix] ?: fallback
+
+    /**
+     * 当前曲目实际可选的音质档位（升序）。
+     * 取音乐源插件下发的 song.qualities；为空（旧源或该接口未带音质信息）时
+     * 降级为全部档位，保证不因信息缺失而锁死选择。
+     */
+    fun availableQualities(song: com.qmusic.wear.data.model.Song?): List<Quality> {
+        val names = song?.qualities.orEmpty()
+        if (names.isEmpty()) return allQualities()
+        return Quality.entries.filter { it.name in names }.ifEmpty { allQualities() }
     }
 
     companion object {

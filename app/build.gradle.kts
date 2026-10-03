@@ -12,8 +12,13 @@ android {
         applicationId = "com.qmusic.wear"
         minSdk = 27 // 依赖硬下限为 26（watchface-complications-data），如需覆盖 Android 8.0 手表可降至 26
         targetSdk = 36
-        versionCode = 38
-        versionName = "2.1.1"
+        versionCode = 41
+        versionName = "3.0.0"
+    }
+
+    testOptions {
+        // 纯 JVM 单测会触达 android.util.Log 等桩 API（如 SourceEngine 桥接测试）
+        unitTests.isReturnDefaultValues = true
     }
 
     buildTypes {

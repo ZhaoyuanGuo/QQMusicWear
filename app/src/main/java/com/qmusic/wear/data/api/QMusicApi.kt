@@ -1,25 +1,37 @@
 package com.qmusic.wear.data.api
 
 import com.qmusic.wear.data.model.AlbumDetail
+import com.qmusic.wear.data.model.AlbumItem
+import com.qmusic.wear.data.model.DjProgram
+import com.qmusic.wear.data.model.FollowUser
 import com.qmusic.wear.data.model.HomeCard
 import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.Quality
+import com.qmusic.wear.data.model.RadioStation
 import com.qmusic.wear.data.model.ResolvedUrl
 import com.qmusic.wear.data.model.SearchResult
 import com.qmusic.wear.data.model.Song
+import com.qmusic.wear.data.model.SongComments
+import com.qmusic.wear.data.model.UserEvent
 import com.qmusic.wear.data.model.UserProfile
 import com.qmusic.wear.data.source.AlbumDetailDto
+import com.qmusic.wear.data.source.ArtistAlbumsDto
 import com.qmusic.wear.data.source.ArtistSongsDto
+import com.qmusic.wear.data.source.DjProgramDto
+import com.qmusic.wear.data.source.FollowUserDto
 import com.qmusic.wear.data.source.HomeFeedDto
 import com.qmusic.wear.data.source.PlaylistDetailDto
 import com.qmusic.wear.data.source.PlaylistDto
 import com.qmusic.wear.data.source.PlaylistDtoRef
+import com.qmusic.wear.data.source.RadioDto
 import com.qmusic.wear.data.source.ResolveResultDto
 import com.qmusic.wear.data.source.SearchResultDto
+import com.qmusic.wear.data.source.SongCommentsDto
 import com.qmusic.wear.data.source.SongDto
 import com.qmusic.wear.data.source.SourceDtos
 import com.qmusic.wear.data.source.SourceManager
 import com.qmusic.wear.data.source.ToplistItemDto
+import com.qmusic.wear.data.source.UserEventDto
 import com.qmusic.wear.data.source.UserProfileDto
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -191,12 +203,96 @@ suspend fun QMusicApi.albumSongs(albumMid: String): AlbumDetail {
     return AlbumDetail(name = dto.name, coverUrl = dto.coverUrl, songs = dto.songs.map { it.toModel() })
 }
 
-/** 加入/移出「我喜欢」 */
-suspend fun QMusicApi.setLike(songId: Long, like: Boolean): Boolean =
+/**
+ * 加入/移出「我喜欢」。
+ * 除 songId 外一并携带 mid/name/albumMid/intervalSec：酷狗源加收藏走 cloudlist
+ * add_song，需要 hash（由 mid 还原）与歌曲元信息，QQ/网易云源可忽略多余字段。
+ */
+suspend fun QMusicApi.setLike(song: Song, like: Boolean): Boolean =
     SourceDtos.json.decodeFromString(
         Boolean.serializer(),
-        call("setLike", args("songId" to songId, "like" to like)),
+        call(
+            "setLike",
+            args(
+                "songId" to song.songId,
+                "mid" to song.mid,
+                "name" to song.name,
+                "albumMid" to song.albumMid,
+                "intervalSec" to song.intervalSec,
+                "like" to like,
+            ),
+        ),
     )
+
+/** 歌手专辑列表（分页）；第二个值为是否还有下一页 */
+suspend fun QMusicApi.artistAlbums(
+    singerMid: String,
+    offset: Int = 0,
+    limit: Int = 30,
+): Pair<List<AlbumItem>, Boolean> {
+    val dto = SourceDtos.json.decodeFromString(
+        ArtistAlbumsDto.serializer(),
+        call("artistAlbums", args("singerMid" to singerMid, "offset" to offset, "limit" to limit)),
+    )
+    return dto.albums.map { it.toModel() } to dto.hasMore
+}
+
+/** 私人FM / 私人漫游（需登录；源不支持时返回空） */
+suspend fun QMusicApi.radioSongs(): List<Song> = callSongs("radioSongs", "{}")
+
+/** 心动模式（需登录；源不支持或未给 songId 时返回空） */
+suspend fun QMusicApi.heartMode(songId: Long, playlistId: String = "", count: Int = 20): List<Song> =
+    callSongs("heartMode", args("songId" to songId, "playlistId" to playlistId, "count" to count))
+
+/** 播客 / 电台列表（源不支持时返回空） */
+suspend fun QMusicApi.djRadios(limit: Int = 30, offset: Int = 0): List<RadioStation> =
+    SourceDtos.json
+        .decodeFromString(
+            ListSerializer(RadioDto.serializer()),
+            call("djRadios", args("limit" to limit, "offset" to offset)),
+        )
+        .map { it.toModel() }
+
+/** 电台节目列表（源不支持时返回空） */
+suspend fun QMusicApi.djPrograms(radioId: Long, limit: Int = 30, offset: Int = 0): List<DjProgram> =
+    SourceDtos.json
+        .decodeFromString(
+            ListSerializer(DjProgramDto.serializer()),
+            call("djPrograms", args("radioId" to radioId, "limit" to limit, "offset" to offset)),
+        )
+        .map { it.toModel() }
+
+/** 歌曲评论（源不支持时返回空结果） */
+suspend fun QMusicApi.songComments(songId: Long, mid: String, name: String, offset: Int = 0, size: Int = 20): SongComments =
+    SourceDtos.json.decodeFromString(
+        SongCommentsDto.serializer(),
+        call(
+            "songComments",
+            args("songId" to songId, "mid" to mid, "name" to name, "offset" to offset, "size" to size),
+        ),
+    ).toModel()
+
+/** 云盘（需登录；源不支持时返回空） */
+suspend fun QMusicApi.cloudSongs(limit: Int = 50, offset: Int = 0): List<Song> =
+    callSongs("cloudSongs", args("limit" to limit, "offset" to offset))
+
+/** 用户动态（源不支持时返回空） */
+suspend fun QMusicApi.userEvents(uid: Long = 0L, limit: Int = 30, offset: Int = 0): List<UserEvent> =
+    SourceDtos.json
+        .decodeFromString(
+            ListSerializer(UserEventDto.serializer()),
+            call("userEvents", args("uid" to uid, "limit" to limit, "offset" to offset)),
+        )
+        .map { it.toModel() }
+
+/** 关注的人（源不支持时返回空） */
+suspend fun QMusicApi.userFollows(uid: Long = 0L, limit: Int = 30, offset: Int = 0): List<FollowUser> =
+    SourceDtos.json
+        .decodeFromString(
+            ListSerializer(FollowUserDto.serializer()),
+            call("userFollows", args("uid" to uid, "limit" to limit, "offset" to offset)),
+        )
+        .map { it.toModel() }
 
 /** 排行榜列表 */
 suspend fun QMusicApi.toplists(): List<ToplistItem> =
@@ -205,7 +301,7 @@ suspend fun QMusicApi.toplists(): List<ToplistItem> =
         .map { it.toModel() }
 
 /** 排行榜歌曲 */
-suspend fun QMusicApi.toplistSongs(topId: Int): List<Song> =
+suspend fun QMusicApi.toplistSongs(topId: Long): List<Song> =
     callSongs("toplistSongs", args("topId" to topId))
 
 /**
@@ -275,7 +371,8 @@ data class Credential(
 
 /** 排行榜条目 */
 data class ToplistItem(
-    val topId: Int = 0,
+    // 64 位：网易云榜单 id 可能超过 Int32
+    val topId: Long = 0L,
     val title: String = "",
     val picUrl: String = "",
     val updateInfo: String = "",

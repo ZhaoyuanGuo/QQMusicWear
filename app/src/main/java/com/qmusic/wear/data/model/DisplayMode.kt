@@ -15,12 +15,12 @@ enum class UiShape(val label: String) {
     ROUND("圆表"),
 }
 
-/** 播放页进度样式（设置→显示 中选择，默认液体填充） */
+/** 播放页进度样式（设置→显示 中选择；未选择时按屏幕形态取默认值） */
 enum class ProgressStyle(val label: String) {
-    /** 液体填充：模糊遮罩水位淹没封面，底层仍是清晰封面（默认） */
+    /** 液体填充：模糊遮罩水位淹没封面，底层仍是清晰封面（方表默认） */
     LIQUID("液体填充"),
 
-    /** 边框描边：进度沿屏幕圆角边框走一圈（方表专属；圆表回退边缘进度环） */
+    /** 边框描边：进度沿屏幕圆角边框走一圈（方表专属；圆表即经典屏幕边缘进度环，圆表默认） */
     BORDER("边框描边"),
 
     /** 封面描边：进度沿圆盘封面外缘描一圈 */
@@ -35,3 +35,12 @@ enum class ProgressStyle(val label: String) {
     /** 点阵进度：一排圆点，点亮的数量=进度（方表用方案D圆盘布局） */
     DOTS("点阵进度"),
 }
+
+/**
+ * 未显式选择进度样式时的默认值（两套 UI 各自独立）：
+ * - 圆表：沿用 v2.0.0 经典播放页——中央圆盘 + 屏幕边缘进度环
+ *   （该外观在圆表下由 [ProgressStyle.BORDER] 承载）
+ * - 方表：液体填充
+ */
+fun defaultProgressStyle(isRound: Boolean): ProgressStyle =
+    if (isRound) ProgressStyle.BORDER else ProgressStyle.LIQUID

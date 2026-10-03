@@ -96,6 +96,17 @@ object SourceManager {
     private val _displayName = MutableStateFlow(SourceRegistry.default.displayName)
     val displayNameFlow: StateFlow<String> = _displayName.asStateFlow()
 
+    /**
+     * 当前源已注册的 handler 名（能力探测）。
+     * UI 据此隐藏源不支持的功能入口（播客/电台、动态/关注、评论等），
+     * 避免用户点进去只看到空列表。源未就绪时为空集。
+     */
+    private val _capabilities = MutableStateFlow<Set<String>>(emptySet())
+    val capabilitiesFlow: StateFlow<Set<String>> = _capabilities.asStateFlow()
+
+    /** 当前源是否实现了某个 handler */
+    fun supports(handler: String): Boolean = handler in _capabilities.value
+
     @Volatile
     private var engine: SourceEngine? = null
 
@@ -315,6 +326,7 @@ object SourceManager {
                         encryptUin = c.encryptUin,
                         nick = c.nick,
                         avatarUrl = c.avatarUrl,
+                        isLogged = c.isLogged,
                     )
                 },
             )
@@ -340,6 +352,7 @@ object SourceManager {
             }
             playbackHeaders = manifestObj.jsonHeaders("playbackHeaders")
             prefixToQuality = parseQualityPrefixes(manifestObj)
+            _capabilities.value = eng.registeredHandlers()
             (manifestObj["name"] as? JsonPrimitive)?.content
                 ?.takeIf { it.isNotBlank() }
                 ?.let { _displayName.value = it }
@@ -365,6 +378,7 @@ object SourceManager {
         imageRules = null
         playbackHeaders = emptyMap()
         prefixToQuality = emptyMap()
+        _capabilities.value = emptySet()
     }
 
     private fun persistCache(src: MusicSource, script: String) {

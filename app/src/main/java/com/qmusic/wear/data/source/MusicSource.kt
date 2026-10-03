@@ -34,28 +34,28 @@ object SourceRegistry {
             fileName = "qmusic_source.js",
             displayName = "QQ音乐",
             themeColor = 0xFF31C27C,
-            subtitle = "绿 · 官方曲库",
+            subtitle = "听我想听",
         ),
         MusicSource(
             id = "kugou-web",
             fileName = "kugou_source.js",
             displayName = "酷狗音乐",
             themeColor = 0xFF2BA3F0,
-            subtitle = "蓝 · 蝰蛇音效",
+            subtitle = "就是歌多",
+        ),
+        MusicSource(
+            id = "kugou-concept-web",
+            fileName = "kugou_concept_source.js",
+            displayName = "酷狗概念版",
+            themeColor = 0xFF4FC3F7,
+            subtitle = "因乐相遇",
         ),
         MusicSource(
             id = "netease-web",
             fileName = "netease_source.js",
             displayName = "网易云音乐",
             themeColor = 0xFFE23B2E,
-            subtitle = "红 · 私人 FM",
-        ),
-        MusicSource(
-            id = "fanqie-web",
-            fileName = "fanqie_source.js",
-            displayName = "番茄畅听",
-            themeColor = 0xFFFF6A3D,
-            subtitle = "橙 · 有声书",
+            subtitle = "发现好音乐",
         ),
     )
 

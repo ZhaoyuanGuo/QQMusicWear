@@ -177,18 +177,22 @@ class PlayerConnection(
 
             // 播放失败自愈：首次失败尝试本地文件/降音质重解析，仍失败自动跳下一首
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                val song = currentQueue.getOrNull(c.currentMediaItemIndex) ?: return
+                val index = c.currentMediaItemIndex
+                val song = currentQueue.getOrNull(index) ?: return
+                // 启动恢复的队列是空地址占位项（about:blank）：解析成功即续播，
+                // 解析失败静默跳下一首（避免整队列每首都弹一次「无法播放」）
+                val placeholder = currentUrls.getOrNull(index)?.url.isNullOrBlank()
                 failStreak++
                 scope.launch {
-                    if (failStreak == 1) {
+                    if (failStreak == 1 || placeholder) {
                         resolveFallback(song)?.let { fallback ->
-                            replaceUrl(c.currentMediaItemIndex, fallback)
+                            replaceUrl(index, fallback)
                             return@launch
                         }
                     }
                     // 降级无果：自动跳下一首；整队列均失败则停止，避免无限循环
                     if (failStreak < currentQueue.size) {
-                        toast("无法播放《${song.name}》，已自动切换下一首")
+                        if (!placeholder) toast("无法播放《${song.name}》，已自动切换下一首")
                         mainExecutor.execute {
                             val cc = controller ?: return@execute
                             if (cc.hasNextMediaItem()) {
@@ -221,18 +225,23 @@ class PlayerConnection(
     /** 失败兜底：优先本地已下载文件，其次按音质从高到低逐级降档重解析 */
     private suspend fun resolveFallback(song: Song): ResolvedUrl? {
         ServiceLocator.downloads.findByMid(song.mid)?.let { d ->
-            return ResolvedUrl(url = java.io.File(d.filePath).toURI().toString(), prefix = "LOCAL")
+            // 带上下载时记录的真实音质前缀，播放页角标才能显示实际音质（无则退回 LOCAL）
+            return ResolvedUrl(
+                url = java.io.File(d.filePath).toURI().toString(),
+                prefix = d.prefix.ifEmpty { "LOCAL" },
+            )
         }
         val current = runCatching { ServiceLocator.settingsStore.quality() }
             .getOrDefault(com.qmusic.wear.data.model.Quality.STANDARD)
-        val lower = com.qmusic.wear.data.model.Quality.entries
-            .filter { it.ordinal < current.ordinal }
+        // 含当前档位本身：标准档没有更低档可降，只降档会导致兜底完全失效
+        val candidates = com.qmusic.wear.data.model.Quality.entries
+            .filter { it.ordinal <= current.ordinal }
             .sortedByDescending { it.ordinal }
-        for (q in lower) {
+        for (q in candidates) {
             val r = runCatching {
                 ServiceLocator.repository.resolveUrls(listOf(song), q).firstOrNull()
             }.getOrNull()
-            if (r != null) return r
+            if (r != null && r.url.isNotBlank()) return r
         }
         return null
     }
@@ -344,7 +353,7 @@ class PlayerConnection(
             val resolved = ServiceLocator.downloads.findByMid(song.mid)?.let { d ->
                 ResolvedUrl(
                     url = java.io.File(d.filePath).toURI().toString(),
-                    prefix = "LOCAL",
+                    prefix = d.prefix.ifEmpty { "LOCAL" },
                 )
             } ?: run {
                 val quality = ServiceLocator.settingsStore.quality()
@@ -394,7 +403,7 @@ class PlayerConnection(
                 ServiceLocator.downloads.findByMid(s.mid)?.let { d ->
                     ResolvedUrl(
                         url = java.io.File(d.filePath).toURI().toString(),
-                        prefix = "LOCAL",
+                        prefix = d.prefix.ifEmpty { "LOCAL" },
                     )
                 }
             }
@@ -406,8 +415,9 @@ class PlayerConnection(
                 emptyList()
             }
             val urls = songs.mapIndexed { i, _ -> localUrls[i] ?: resolved.getOrNull(i) }
+            // 空地址（解析返回了空 url）不入队，否则 ExoPlayer 直接 Source error
             val playable = songs.mapIndexedNotNull { i, s ->
-                urls[i]?.let { s to it }
+                urls[i]?.takeIf { it.url.isNotBlank() }?.let { s to it }
             }
             if (playable.isEmpty()) {
                 // 明确反馈，避免点击后无任何响应；附带诊断信息便于排障

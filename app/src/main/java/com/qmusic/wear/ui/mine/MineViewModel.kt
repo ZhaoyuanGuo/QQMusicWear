@@ -8,7 +8,6 @@ import com.qmusic.wear.data.model.SearchResult
 import com.qmusic.wear.data.model.Song
 import com.qmusic.wear.data.model.UserProfile
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -82,22 +81,31 @@ class MineViewModel : ViewModel() {
         }
     }
 
-    /** 搜索框输入（350ms 防抖） */
+    /**
+     * 搜索框输入：只更新文本，不发起搜索。
+     * 中文拼音输入期间若即输即搜会切换页面结构、打断候选上屏，故改为等用户确认后再搜。
+     */
     fun onQueryChange(query: String) {
-        _search.value = _search.value.copy(query = query)
         searchJob?.cancel()
-        if (query.isBlank()) {
-            _search.value = SearchUiState(query = query)
-            return
+        _search.value = if (query.isBlank()) {
+            SearchUiState(query = query)
+        } else {
+            _search.value.copy(query = query)
         }
+    }
+
+    /** 确认搜索：键盘搜索键 / 搜索图标 / 历史词 / 语音结果 */
+    fun submitSearch(query: String = _search.value.query) {
+        searchJob?.cancel()
+        val keyword = query.trim()
+        if (keyword.isEmpty()) return
+        _search.value = _search.value.copy(query = query)
         searchJob = viewModelScope.launch {
-            delay(350)
-            if (_search.value.query != query) return@launch
             // 记录实际执行的搜索（历史去重、最新在前）
-            ServiceLocator.searchHistory.add(query)
+            ServiceLocator.searchHistory.add(keyword)
             _search.value = _search.value.copy(searching = true, result = null)
             val result = runCatching {
-                ServiceLocator.repository.searchAll(query)
+                ServiceLocator.repository.searchAll(keyword)
             }.getOrDefault(SearchResult())
             if (_search.value.query == query) {
                 _search.value = _search.value.copy(searching = false, result = result)
