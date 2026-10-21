@@ -10,7 +10,8 @@
 //
 // 用法（项目根目录）：
 //   node tools/cos-upload.js --apk QQMusicWear-v3.1.0.apk --version 3.1.0 \
-//        [--site website/index.html] [--json website/update/version.json]
+//        --site-dir website --json website/update/version.json
+//   （--site 只传单页；镜像站要用 --site-dir 连 shots/ 与备案图一起传，否则轮播图 404）
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -65,6 +66,26 @@ function authorize(method, uri, params, headers) {
     `&q-header-list=${hKeys.map(enc).join(';')}&q-url-param-list=${pKeys.map(enc).join(';')}&q-signature=${signature}`;
 }
 
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml',
+  '.webp': 'image/webp', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8',
+};
+
+/** 递归收集目录下全部文件；跳过 update/（更新清单由 --json 管）与 deploy/（nginx 配置与部署脚本，不得公开） */
+const SKIP_DIRS = ['update', 'deploy'];
+function walk(dir, base = dir, acc = []) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      if (SKIP_DIRS.includes(e.name)) continue;
+      walk(full, base, acc);
+    } else acc.push(path.relative(base, full).split(path.sep).join('/'));
+  }
+  return acc;
+}
+
 async function put(localPath, cosKey, contentType, disposition) {
   if (!fs.existsSync(localPath)) { console.error(`跳过（文件不存在）：${localPath}`); return false; }
   const body = fs.readFileSync(localPath);
@@ -110,6 +131,18 @@ async function put(localPath, cosKey, contentType, disposition) {
   }
   if (site) failed |= !await put(site, `${PREFIX}/website/index.html`, 'text/html; charset=utf-8', null);
   if (json) failed |= !await put(json, `${PREFIX}/update/version.json`, 'application/json; charset=utf-8', null);
+
+  // 整站目录：把 index.html / shots/*.jpg / ga_beian.png 等一并上传，
+  // 否则镜像页只传 HTML 会造成轮播图与备案图标 404（相对路径在桶里找不到对象）
+  const siteDir = arg('site-dir');
+  if (siteDir) {
+    const files = walk(siteDir);
+    console.log(`\n整站上传 ${siteDir}/ -> ${PREFIX}/website/（共 ${files.length} 个文件）`);
+    for (const rel of files) {
+      const mime = MIME[path.extname(rel).toLowerCase()] || 'application/octet-stream';
+      failed |= !await put(path.join(siteDir, rel), `${PREFIX}/website/${rel}`, mime, null);
+    }
+  }
 
   process.exit(failed ? 1 : 0);
 })();
