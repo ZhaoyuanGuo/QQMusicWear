@@ -10,7 +10,7 @@
 //
 // 用法（项目根目录）：
 //   node tools/cos-upload.js --apk QQMusicWear-v3.1.0.apk --version 3.1.0 \
-//        --site-dir website --json website/update/version.json
+//        --site-dir website --source-dir source --json website/update/version.json
 //   （--site 只传单页；镜像站要用 --site-dir 连 shots/ 与备案图一起传，否则轮播图 404）
 const crypto = require('crypto');
 const fs = require('fs');
@@ -129,6 +129,18 @@ async function put(localPath, cosKey, contentType, disposition) {
     console.log(`   下载直链：${PUBLIC_BASE}/${PREFIX}/apk/${name}`);
     console.log(`   最新版别名：${PUBLIC_BASE}/${PREFIX}/apk/QQMusicWear-latest.apk`);
   }
+  // 音乐源插件：仓库不入库（/source/ 被 gitignore），仅经 CDN 下发；
+  // 自有 COS 镜像可控可刷缓存，所以排在 MIRROR_BASES 首位
+  const srcDir = arg('source-dir');
+  if (srcDir) {
+    const scripts = fs.readdirSync(srcDir).filter(f => f.endsWith('.js'));
+    console.log(`\n插件上传 ${srcDir}/ -> ${PREFIX}/source/（共 ${scripts.length} 个）`);
+    for (const f of scripts) {
+      failed |= !await put(path.join(srcDir, f), `${PREFIX}/source/${f}`,
+        'application/javascript; charset=utf-8', null);
+    }
+  }
+
   if (site) failed |= !await put(site, `${PREFIX}/website/index.html`, 'text/html; charset=utf-8', null);
   if (json) failed |= !await put(json, `${PREFIX}/update/version.json`, 'application/json; charset=utf-8', null);
 

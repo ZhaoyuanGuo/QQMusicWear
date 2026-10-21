@@ -2,6 +2,20 @@
 
 本项目的所有显著变更都记录在此文件中。
 
+## 3.1.1 (2026-10-21)
+
+### 修复
+- CI 门禁 `app-unit-test` 长期误红：`SourceLyricHandlerTest` 依赖仓库内不存在的
+  `source/qmusic_source.js`（`/source/` 按约定不入库、仅经 CDN 下发），取不到时直接 `error()` 判失败；
+  改为按 JUnit `Assume` 跳过（无法出网时同样跳过），本地有脚本时仍照常执行
+
+### 优化
+- 音乐源插件分发新增**自有 COS 镜像**并置于首位（`https://dl.suspect.top/qqmusicwear/source/`）：
+  原首选 CloudBase 静态托管属于另一个账号，发布链路不可控，导致仓库里已完成的 v15 插件
+  （含微信扫码登录 `wxLogin`）无法下发给用户。现在新装与更新都能直接取到 v15
+  （真机实测：清空缓存后首次启动即从新镜像下载并加载 v15）
+- 发布工具链：`tools/cos-upload.js` 增加 `--source-dir`，一次上传全6个签名插件脚本
+
 ## 3.1.0 (2026-10-21)
 
 ### 新增

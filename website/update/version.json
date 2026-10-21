@@ -1,9 +1,9 @@
 {
-  "versionCode": 42,
-  "versionName": "3.1.0",
-  "apkUrl": "https://dl.suspect.top/qqmusicwear/apk/QQMusicWear-v3.1.0.apk",
-  "notes": "新增本地音乐、听歌识曲与应用内检查更新；音乐源扩充至六种（新增番茄音乐 / 番茄畅听）；QQ音乐源支持微信扫码登录；修复扫码登录二维码不出现、离开登录页后重进长时间等待；断网兜底与播放失败自愈增强。",
+  "versionCode": 43,
+  "versionName": "3.1.1",
+  "apkUrl": "https://dl.suspect.top/qqmusicwear/apk/QQMusicWear-v3.1.1.apk",
+  "notes": "音乐源插件改走自有 COS 镜像并置于首位：新装用户可直接获取 v15（含微信扫码登录）；修复 CI 门禁长期误红。",
   "minVersionCode": 0,
   "sizeBytes": 4818079,
-  "md5": "f1e74eb529f62b6d10ff8a036b7be1d9"
+  "md5": "62b6f59f0e45ce9b8f1d2938444f5053"
 }

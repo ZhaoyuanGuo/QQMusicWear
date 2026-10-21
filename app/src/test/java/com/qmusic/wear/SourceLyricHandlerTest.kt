@@ -1,6 +1,7 @@
 package com.qmusic.wear
 
 import org.junit.Assert.assertTrue
+import org.junit.Assume
 import org.junit.Test
 import org.mozilla.javascript.BaseFunction
 import org.mozilla.javascript.Context
@@ -15,6 +16,10 @@ import java.util.Base64
 /**
  * 歌词 handler 集成测试：在 JVM Rhino 环境直接执行仓库源脚本，
  * 用真实 HTTP 验证 lyric 主通道/兜底返回明文 LRC（复现真机「暂无歌词」用）。
+ *
+ * 两个前提不满足时按「跳过」而非「失败」处理（否则 CI 门禁会长期误红）：
+ * - 仓库里没有源脚本：`/source/` 按约定不入库（只经 CDN 下发），取不到就跳过
+ * - 网络不可达：本测试跑真实接口，被限流/隔离时跳过
  */
 class SourceLyricHandlerTest {
 
@@ -24,8 +29,11 @@ class SourceLyricHandlerTest {
             File("source/qmusic_source.js"),
         )
         val f = candidates.firstOrNull { it.exists() }
-            ?: error("找不到 source/qmusic_source.js，cwd=" + File(".").absolutePath)
-        return f.readText(Charsets.UTF_8)
+        Assume.assumeTrue(
+            "仓库内无音乐源脚本（/source/ 不入库，仅 CDN 分发），跳过源脚本集成测试；cwd=" + File(".").absolutePath,
+            f != null,
+        )
+        return requireNotNull(f).readText(Charsets.UTF_8)
     }
 
     private fun makeQmu(scopeRef: Array<Scriptable?>): NativeObject {
@@ -69,7 +77,13 @@ class SourceLyricHandlerTest {
             val url = a.getOrNull(1)?.toString().orEmpty()
             val headersJson = a.getOrNull(2)?.toString().orEmpty()
             val body = a.getOrNull(3)?.toString()
-            val conn = URL(url).openConnection() as HttpURLConnection
+            val conn = try {
+                URL(url).openConnection() as HttpURLConnection
+            } catch (t: Throwable) {
+                // 环境不允许出网（CI 隔离 / DNS 不可达）：跳过，不把基础设施问题报成产品缺陷
+                Assume.assumeNoException("无法连接 $url，跳过真实接口集成测试", t)
+                throw t
+            }
             conn.requestMethod = method
             Regex("\"([^\"]+)\"\\s*:\\s*\"([^\"]*)\"").findAll(headersJson).forEach { m ->
                 conn.setRequestProperty(m.groupValues[1], m.groupValues[2])

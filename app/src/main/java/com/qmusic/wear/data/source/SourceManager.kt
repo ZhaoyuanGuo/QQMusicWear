@@ -46,8 +46,9 @@ sealed class SourceState {
  */
 object SourceManager {
 
-    /** 下载入口镜像基地址（依次尝试；CloudBase 静态托管国内直连，置顶） */
+    /** 下载入口镜像基地址（依次尝试；自有 COS + CDN 可控可刷缓存，置顶） */
     private val MIRROR_BASES = listOf(
+        "https://dl.suspect.top/qqmusicwear/source/",
         "https://suspect-d1g6etar94f6301af-1461800616.tcloudbaseapp.com/",
         "https://cdn.jsdelivr.net/gh/ZhaoyuanGuo/QQMusicWear@main/source/",
         "https://fastly.jsdelivr.net/gh/ZhaoyuanGuo/QQMusicWear@main/source/",
