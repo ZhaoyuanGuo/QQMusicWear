@@ -28,11 +28,13 @@ import androidx.wear.compose.material3.TimeText
 import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.data.download.Downloaded
 import com.qmusic.wear.ui.components.PageTitle
+import com.qmusic.wear.ui.components.PlayAllChip
 import com.qmusic.wear.ui.components.qmRotarySnap
 import com.qmusic.wear.ui.components.SongRow
 
 /**
- * 下载管理页：单击播放（本地文件，离线可用），长按删除（需确认）。
+ * 下载管理页：播放全部（整表替换队列，全本地文件离线可播）、
+ * 单击播放（追加到队列尾部），长按删除（需确认）。
  */
 @Composable
 fun DownloadsScreen(
@@ -79,6 +81,19 @@ fun DownloadsScreen(
                     )
                 }
             } else {
+                // 播放全部：整表替换当前队列（不再追加到旧队列尾部），
+                // 全部为已下载歌曲时 playFromList 跳过网络解析，真正离线可用
+                item {
+                    PlayAllChip(
+                        onClick = {
+                            ServiceLocator.player.playFromList(
+                                downloads.map { it.song },
+                                downloads.first().song.mid,
+                            )
+                            onOpenPlayer()
+                        },
+                    )
+                }
                 items(downloads, key = { it.song.mid }) { d ->
                     SongRow(
                         song = d.song,

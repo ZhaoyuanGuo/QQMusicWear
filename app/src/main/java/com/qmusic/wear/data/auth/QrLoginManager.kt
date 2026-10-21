@@ -6,6 +6,21 @@ import com.qmusic.wear.data.source.SourceManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * 扫码登录方式。
+ *
+ * 每一种对应源插件的一个 handler：源只实现了 QQ 扫码时，宿主依能力探测隐藏微信入口
+ * （酷狗/网易云等源只注册 qrLogin，因此不会看到切换按钮）。
+ */
+enum class LoginType(val handler: String) {
+    /** QQ 互联（ptlogin）扫码，用手机 QQ 扫 */
+    QQ("qrLogin"),
+
+    /** 微信开放平台 qrconnect 扫码，用微信「扫一扫」 */
+    WECHAT("wxLogin"),
+}
 
 /** 扫码登录过程事件（UI 层据此驱动状态机） */
 sealed class QrLoginEvent {
@@ -48,19 +63,31 @@ class QrLoginManager {
         val encryptUin: String = "",
         val nick: String = "",
         val avatarUrl: String = "",
+        val authCookie: String = "",
     )
+
+    /** 该登录方式当前源是否支持（能力探测，未实现则 UI 不展示入口） */
+    fun supports(type: LoginType): Boolean = SourceManager.supports(type.handler)
 
     /**
      * 完整登录流程。成功返回 Credential 并发出 [QrLoginEvent.Success]，
      * 过期/取消/错误只发事件并返回 null（调用方可 retry 重新发起）。
      */
-    suspend fun login(onEvent: (QrLoginEvent) -> Unit): Credential? {
+    suspend fun login(type: LoginType = LoginType.QQ, onEvent: (QrLoginEvent) -> Unit): Credential? {
         return withContext(Dispatchers.IO) {
+            // 事件由引擎线程投递，用原子标记记录本轮是否收到过事件
+            val delivered = AtomicBoolean(false)
             try {
-                val raw = SourceManager.callWithEvents("qrLogin", "{}") { json ->
-                    parseEvent(json)?.let(onEvent)
+                val raw = SourceManager.callWithEvents(type.handler, "{}") { json ->
+                    parseEvent(json)?.let { event ->
+                        delivered.set(true)
+                        onEvent(event)
+                    }
                 }
                 if (raw.isEmpty() || raw == "null") {
+                    // 源未返回凭据且全程没发过任何事件（流程被取消或提前退出）：
+                    // 补一个 Error，否则 UI 会停在 Loading 无限转圈
+                    if (!delivered.get()) onEvent(QrLoginEvent.Error("登录流程已中断，请重试"))
                     null
                 } else {
                     val dto = SourceDtos.json.decodeFromString(LoginCredDto.serializer(), raw)
@@ -71,6 +98,7 @@ class QrLoginManager {
                         encryptUin = dto.encryptUin,
                         nick = dto.nick,
                         avatarUrl = dto.avatarUrl,
+                        authCookie = dto.authCookie,
                         createTime = System.currentTimeMillis() / 1000,
                         keyExpiresIn = 0L,
                     )
@@ -80,6 +108,14 @@ class QrLoginManager {
                 null
             }
         }
+    }
+
+    /**
+     * 放弃当前登录（离开登录页 / 切换扫码方式）：
+     * 源插件的轮询跑在单线程引擎上，不取消则下一次登录要排队等它跑完。
+     */
+    fun cancel() {
+        SourceManager.cancelCurrentCall()
     }
 
     /** 源事件 JSON -> 领域事件 */
@@ -118,6 +154,7 @@ class QrLoginManager {
                                 encryptUin = dto.encryptUin,
                                 nick = dto.nick,
                                 avatarUrl = dto.avatarUrl,
+                                authCookie = dto.authCookie,
                                 createTime = System.currentTimeMillis() / 1000,
                             ),
                         )

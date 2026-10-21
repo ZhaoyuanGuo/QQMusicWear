@@ -17,6 +17,12 @@ import androidx.wear.ongoing.OngoingActivity
 import androidx.wear.ongoing.Status
 import com.qmusic.wear.MainActivity
 import com.qmusic.wear.R
+import com.qmusic.wear.util.AppPresence
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 /**
  * 前台媒体播放服务：持有 ExoPlayer 与 MediaSession，
@@ -30,6 +36,9 @@ import com.qmusic.wear.R
 class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
+
+    /** 监听前后台/亮灭屏翻转，退后台时收起常驻卡片 */
+    private val serviceScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
 
     /** 是否真正在播放（暂停为 false），同步给 Complication */
     private var playing = false
@@ -78,6 +87,12 @@ class PlaybackService : MediaSessionService() {
                 NotificationManager.IMPORTANCE_LOW,
             ),
         )
+        // 回到前台且暂停中有内容时，重新展示常驻卡片（后台时被收起）
+        serviceScope.launch {
+            AppPresence.interactiveFlow.collectLatest { interactive ->
+                if (interactive) updateOngoingActivity()
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
@@ -92,6 +107,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         // 服务结束即无活动会话：撤下 Ongoing Activity 并清空 Complication 数据
+        serviceScope.cancel()
         notificationManager.cancel(ONGOING_NOTIFICATION_ID)
         getSharedPreferences(COMPLICATION_PREFS, MODE_PRIVATE).edit().clear().apply()
         mediaSession?.run {
@@ -110,6 +126,13 @@ class PlaybackService : MediaSessionService() {
     private fun updateOngoingActivity() {
         val item = mediaSession?.player?.currentMediaItem
         if (item == null) {
+            notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+            return
+        }
+        // 暂停且用户不在应用内（后台/灭屏）：收起常驻卡片，
+        // 避免手表桌面一直挂着一张「已播放完但关不掉」的正在播放卡（用户反馈痛点）；
+        // 后台播放中仍保留，回前台自动恢复展示
+        if (!playing && !AppPresence.interactive) {
             notificationManager.cancel(ONGOING_NOTIFICATION_ID)
             return
         }

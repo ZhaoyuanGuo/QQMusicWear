@@ -1,10 +1,6 @@
 package com.qmusic.wear.ui.mine
 
-import android.app.Activity
-import android.content.Intent
-import android.speech.RecognizerIntent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import android.content.pm.PackageManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
@@ -25,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,12 +50,14 @@ fun MineOverlay(
     onOpenPlayer: () -> Unit,
     onOpenRecent: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenLocalMusic: () -> Unit = {},
     onOpenSettings: () -> Unit,
     onOpenPlaylist: (Long, String) -> Unit,
     onOpenArtist: (String, String) -> Unit = { _, _ -> },
     onOpenAlbum: (String, String) -> Unit = { _, _ -> },
     onOpenPodcast: () -> Unit = {},
     onOpenSocial: () -> Unit = {},
+    onOpenRecognition: () -> Unit = {},
     vm: MineViewModel = viewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -75,26 +74,14 @@ fun MineOverlay(
 
     LaunchedEffect(Unit) { vm.load() }
 
-    // 语音搜索：系统语音识别 → 识别结果填入搜索框自动触发搜索
-    val voiceLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        val text = result.data
-            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            ?.firstOrNull()
-        if (result.resultCode == Activity.RESULT_OK && !text.isNullOrBlank()) {
-            vm.submitSearch(text)
-        }
-    }
-    val launchVoice: () -> Unit = {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "说出要搜索的歌曲、歌手或歌单")
-        }
-        // 设备无语音识别组件时静默忽略
-        runCatching { voiceLauncher.launch(intent) }
-    }
-    // 输入态标记：区分"正在打字"与"点历史词/语音结果"，用于切到结果页时恢复焦点与键盘
+    // 听歌识曲入口：需同时满足「当前源实现了 recognizeSong」与「设备有麦克风硬件」，
+    // 与播客/动态入口的能力探测同一思路；无麦克风设备直接隐藏入口而非点击后报错
+    val caps by com.qmusic.wear.data.source.SourceManager.capabilitiesFlow.collectAsStateWithLifecycle()
+    val ctx = LocalContext.current
+    val hasMic = remember { ctx.packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE) }
+    val showRecognize = caps.contains("recognizeSong") && hasMic
+
+    // 输入态标记：区分"正在打字"与"点历史词/识曲结果"，用于切到结果页时恢复焦点与键盘
     var typing by remember { mutableStateOf(false) }
     val fieldFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -155,7 +142,7 @@ fun MineOverlay(
                         logged = cred.isLogged,
                         query = search.query,
                         onQueryChange = { typing = true; vm.onQueryChange(it) },
-                        onVoiceSearch = launchVoice,
+                        onRecognize = onOpenRecognition,
                         onSearch = { typing = true; vm.submitSearch() },
                         history = history,
                         onPickHistory = { typing = false; vm.submitSearch(it) },
@@ -163,6 +150,7 @@ fun MineOverlay(
                         onOpenRecent = onOpenRecent,
                         onOpenPlaylist = onOpenPlaylist,
                         onOpenDownloads = onOpenDownloads,
+                        onOpenLocalMusic = onOpenLocalMusic,
                         onOpenSettings = onOpenSettings,
                         onOpenPodcast = onOpenPodcast,
                         onOpenSocial = onOpenSocial,
@@ -173,7 +161,8 @@ fun MineOverlay(
                     SearchHeaderAndLoading(
                         query = search.query,
                         onQueryChange = { typing = true; vm.onQueryChange(it) },
-                        onVoiceSearch = launchVoice,
+                        onRecognize = onOpenRecognition,
+                        showRecognize = showRecognize,
                         onSearch = { typing = true; vm.submitSearch() },
                         fieldFocus = fieldFocus,
                         headerInset = headerInset,
@@ -190,7 +179,8 @@ fun MineOverlay(
                         MineSearchField(
                             query = search.query,
                             onQueryChange = { typing = true; vm.onQueryChange(it) },
-                            onVoiceSearch = launchVoice,
+                            onRecognize = onOpenRecognition,
+                            showRecognize = showRecognize,
                             onSearch = { typing = true; vm.submitSearch() },
                             modifier = Modifier
                                 .focusRequester(fieldFocus)
@@ -266,7 +256,8 @@ fun MineOverlay(
 private fun SearchHeaderAndLoading(
     query: String,
     onQueryChange: (String) -> Unit,
-    onVoiceSearch: () -> Unit,
+    onRecognize: () -> Unit,
+    showRecognize: Boolean,
     onSearch: () -> Unit,
     fieldFocus: FocusRequester,
     headerInset: androidx.compose.ui.unit.Dp,
@@ -281,7 +272,8 @@ private fun SearchHeaderAndLoading(
         MineSearchField(
             query = query,
             onQueryChange = onQueryChange,
-            onVoiceSearch = onVoiceSearch,
+            onRecognize = onRecognize,
+            showRecognize = showRecognize,
             onSearch = onSearch,
             modifier = Modifier
                 .focusRequester(fieldFocus)

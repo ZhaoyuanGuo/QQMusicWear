@@ -186,26 +186,25 @@ object SourceManager {
         downloadLocked(_activeSource.value)
     }
 
-    /** 业务调用入口：转发到引擎处理器，异常统一抛出；期间挂载全局事件回调 */
+    /** 业务调用入口：转发到引擎处理器，异常统一抛出；回调随调用一同下发，由引擎在真正开跑时安装 */
     suspend fun call(name: String, argsJson: String): String {
         val e = engine ?: error("音乐源未就绪")
-        e.eventSink = { raw -> runCatching { onSourceEvent(raw) } }
-        try {
-            return e.call(name, argsJson)
-        } finally {
-            e.eventSink = null
-        }
+        return e.call(name, argsJson) { raw -> runCatching { onSourceEvent(raw) } }
     }
 
-    /** 带事件回调的调用（扫码登录）：期间挂载 sink，结束后清除 */
+    /** 带事件回调的调用（扫码登录）：回调只在本调用期间生效，返回后由引擎自动还原 */
     suspend fun callWithEvents(name: String, argsJson: String, sink: (String) -> Unit): String {
         val e = engine ?: error("音乐源未就绪")
-        e.eventSink = sink
-        try {
-            return e.call(name, argsJson)
-        } finally {
-            e.eventSink = null
-        }
+        return e.call(name, argsJson) { raw -> runCatching { sink(raw) } }
+    }
+
+    /**
+     * 取消当前正在执行的源调用（扫码登录切换方式 / 离开登录页）。
+     * 引擎单线程串行，不取消则下一次登录调用要排队等旧轮询跑完；
+     * 长轮询 handler 会在下一轮检查 [SourceEngine.cancelCurrentCall] 标记后返回。
+     */
+    fun cancelCurrentCall() {
+        engine?.cancelCurrentCall()
     }
 
     /** 引擎是否就绪 */
@@ -228,6 +227,8 @@ object SourceManager {
             val ok = installScript(src, script, "本地导入")
             if (ok) {
                 persistCache(src, script)
+                // 导入内容与远端脱钩：清除 ETag，避免下次「更新音乐源」误判为未变化
+                clearEtag(src)
                 null
             } else {
                 if (!wasReady) _state.value = SourceState.Failed("导入失败：源脚本加载失败")
@@ -269,11 +270,23 @@ object SourceManager {
     private suspend fun downloadLocked(src: MusicSource): Boolean = withContext(Dispatchers.IO) {
         val wasReady = engine != null
         if (!wasReady) _state.value = SourceState.Downloading(0f)
-        val script = fetchFromMirrors(src, reportProgress = !wasReady)
-        if (script == null) {
+        val fetched = fetchFromMirrors(src, reportProgress = !wasReady)
+        if (fetched == null) {
             if (!wasReady) _state.value = SourceState.Failed("下载失败：所有镜像均不可达")
             return@withContext false
         }
+        // 远端内容未变化（304）：沿用本地缓存，避免重复下载整包（省流量、缩短更新耗时）
+        if (fetched is FetchResult.NotModified) {
+            Log.d(TAG, "源未变化（304），沿用本地缓存 ${src.id}")
+            return@withContext if (hasCache(src)) {
+                loadCachedLocked(src)
+            } else {
+                // 本地缓存被清（无 etag 依据）时回退为无条件重取
+                clearEtag(src)
+                downloadLocked(src)
+            }
+        }
+        val script = (fetched as FetchResult.Body).script
         if (!script.contains("qmu.register")) {
             if (!wasReady) _state.value = SourceState.Failed("下载失败：源文件内容无效")
             return@withContext false
@@ -287,13 +300,21 @@ object SourceManager {
         val ok = installScript(src, script, "网络下载")
         if (ok) {
             persistCache(src, script)
+            persistEtag(src, fetched.etag)
         } else if (!wasReady) {
             _state.value = SourceState.Failed("源脚本加载失败")
         }
         ok
     }
 
-    private fun fetchFromMirrors(src: MusicSource, reportProgress: Boolean = true): String? {
+    /** 镜像拉取结果：拿到新内容（含 ETag）或远端未变化 */
+    private sealed interface FetchResult {
+        data class Body(val script: String, val etag: String) : FetchResult
+        data object NotModified : FetchResult
+    }
+
+    private fun fetchFromMirrors(src: MusicSource, reportProgress: Boolean = true): FetchResult? {
+        val etag = readEtag(src)
         for ((idx, base) in MIRROR_BASES.withIndex()) {
             val url = base + src.fileName
             try {
@@ -301,16 +322,36 @@ object SourceManager {
                     _state.value = SourceState.Downloading(idx.toFloat() / MIRROR_BASES.size)
                 }
                 Log.d(TAG, "尝试镜像 $idx: $url")
-                downloadClient.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+                val req = Request.Builder().url(url).apply {
+                    // 有条件请求：带上本地 ETag，远端未变化时回 304，跳过整包下载
+                    if (etag.isNotEmpty()) header("If-None-Match", etag)
+                }.build()
+                downloadClient.newCall(req).execute().use { resp ->
+                    if (resp.code == 304) return FetchResult.NotModified
                     if (!resp.isSuccessful) return@use
                     val body = resp.body?.string().orEmpty()
-                    if (body.length > 200) return body
+                    if (body.length > 200) {
+                        return FetchResult.Body(body, resp.header("ETag").orEmpty())
+                    }
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "镜像失败 $url: ${t.message}")
             }
         }
         return null
+    }
+
+    private fun etagKey(src: MusicSource) = "etag.${src.id}"
+
+    private fun readEtag(src: MusicSource): String = prefs.getString(etagKey(src), "").orEmpty()
+
+    private fun persistEtag(src: MusicSource, etag: String) {
+        if (etag.isEmpty()) return
+        prefs.edit().putString(etagKey(src), etag).apply()
+    }
+
+    private fun clearEtag(src: MusicSource) {
+        prefs.edit().remove(etagKey(src)).apply()
     }
 
     /** 编译并注册源脚本；成功后进入 Ready 并预读 manifest 派生信息 */
@@ -326,6 +367,7 @@ object SourceManager {
                         encryptUin = c.encryptUin,
                         nick = c.nick,
                         avatarUrl = c.avatarUrl,
+                        authCookie = c.authCookie,
                         isLogged = c.isLogged,
                     )
                 },

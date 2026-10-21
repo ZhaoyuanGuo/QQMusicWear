@@ -26,45 +26,76 @@ import java.io.File
  * 登录凭证持久化（SharedPreferences，按音乐源隔离）。
  * 每个源一份凭据，键名前缀为源 id；切换源即切换登录态。
  * 历史方案曾用 DataStore，这里保持零额外依赖且同步可读。
+ *
+ * 敏感字段（会话密钥 musickey / encrypt_uin / 昵称 / 头像）经 [SecretBox] 加密后落盘，
+ * 历史明文值读取时原样兼容（无感迁移），下次 save 自动加密。
  */
 class CredentialStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("qmusic_credential", Context.MODE_PRIVATE)
+
+    /** 加密信封：Keystore 不可用时自动降级为明文（保证登录态不丢） */
+    private val box = SecretBox(runCatching { AndroidKeystoreCryptor() }.getOrNull())
 
     /** 读取指定源的凭据；无凭据返回 EMPTY */
     fun read(sourceId: String): com.qmusic.wear.data.api.Credential {
         // 兼容旧版：老用户凭据存在无前缀键下，视为默认源（QQ音乐）的凭据
         val legacy = sourceId == LEGACY_SOURCE_ID
         fun has(name: String) = prefs.contains(key(sourceId, name)) || (legacy && prefs.contains(name))
-        fun str(name: String): String =
+        fun raw(name: String): String =
             prefs.getString(key(sourceId, name), null)
                 ?: if (legacy) prefs.getString(name, "").orEmpty() else ""
+        fun secret(name: String): String = box.decrypt(raw(name))
         fun lng(name: String): Long =
             if (prefs.contains(key(sourceId, name))) prefs.getLong(key(sourceId, name), 0L)
             else if (legacy) prefs.getLong(name, 0L) else 0L
 
         if (!has("musicid")) return com.qmusic.wear.data.api.Credential.EMPTY
-        return com.qmusic.wear.data.api.Credential(
+        val cred = com.qmusic.wear.data.api.Credential(
             musicid = lng("musicid"),
-            musickey = str("musickey"),
-            strMusicid = str("str_musicid"),
-            encryptUin = str("encrypt_uin"),
-            nick = str("nick"),
-            avatarUrl = str("avatar_url"),
+            musickey = secret("musickey"),
+            strMusicid = secret("str_musicid"),
+            encryptUin = secret("encrypt_uin"),
+            nick = secret("nick"),
+            avatarUrl = secret("avatar_url"),
+            authCookie = secret("auth_cookie"),
             createTime = lng("create_time"),
             keyExpiresIn = lng("key_expires_in"),
         )
+        // 惰性迁移：读到历史明文敏感值即刻加密回写（幂等；加密失败保持原值不丢登录态）
+        migratePlaintextIfNeeded(sourceId, cred, ::raw)
+        return cred
     }
 
-    /** 写入指定源的凭据（apply 同步更新内存，随后 read 立即可见） */
+    /** 若存在未加密的非空敏感字段，则整份重写为密文（无明文则不写，避免无谓 IO） */
+    private fun migratePlaintextIfNeeded(
+        sourceId: String,
+        cred: com.qmusic.wear.data.api.Credential,
+        raw: (String) -> String,
+    ) {
+        val secrets = listOf(
+            "musickey", "str_musicid", "encrypt_uin", "nick", "avatar_url", "auth_cookie",
+        )
+        val plaintext = secrets.filter { name ->
+            val v = raw(name)
+            v.isNotEmpty() && !SecretBox.isEncrypted(v)
+        }
+        if (plaintext.isEmpty()) return
+        // 加密不可用（Keystore seal 失败降级为明文）时跳过：否则每次读取都判定「有明文」而反复写盘
+        if (!SecretBox.isEncrypted(box.encrypt(raw(plaintext.first())))) return
+        save(sourceId, cred)
+    }
+
+    /** 写入指定源的凭据（apply 同步更新内存，随后 read 立即可见）；敏感字段加密落盘 */
     fun save(sourceId: String, cred: com.qmusic.wear.data.api.Credential) {
         prefs.edit()
             .putLong(key(sourceId, "musicid"), cred.musicid)
-            .putString(key(sourceId, "musickey"), cred.musickey)
-            .putString(key(sourceId, "str_musicid"), cred.strMusicid)
-            .putString(key(sourceId, "encrypt_uin"), cred.encryptUin)
-            .putString(key(sourceId, "nick"), cred.nick)
-            .putString(key(sourceId, "avatar_url"), cred.avatarUrl)
+            .putString(key(sourceId, "musickey"), box.encrypt(cred.musickey))
+            .putString(key(sourceId, "str_musicid"), box.encrypt(cred.strMusicid))
+            .putString(key(sourceId, "encrypt_uin"), box.encrypt(cred.encryptUin))
+            .putString(key(sourceId, "nick"), box.encrypt(cred.nick))
+            .putString(key(sourceId, "avatar_url"), box.encrypt(cred.avatarUrl))
+            .putString(key(sourceId, "auth_cookie"), box.encrypt(cred.authCookie))
             .putLong(key(sourceId, "create_time"), cred.createTime)
             .putLong(key(sourceId, "key_expires_in"), cred.keyExpiresIn)
             .apply()
@@ -75,7 +106,7 @@ class CredentialStore(context: Context) {
         val editor = prefs.edit()
         listOf(
             "musicid", "musickey", "str_musicid", "encrypt_uin",
-            "nick", "avatar_url", "create_time", "key_expires_in",
+            "nick", "avatar_url", "auth_cookie", "create_time", "key_expires_in",
         ).forEach { editor.remove(key(sourceId, it)) }
         editor.apply()
     }
@@ -130,6 +161,18 @@ class SettingsStore(context: Context) {
     fun setQPlayEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_QPLAY_ENABLED, enabled).apply()
         _qplayEnabledFlow.value = enabled
+    }
+
+    /**
+     * 上次使用的扫码登录方式（true = 微信扫码）：登录页默认沿用。
+     * 只有微信没装 QQ 的用户每次都要重选，记住一次就够。
+     */
+    private val _loginWxFlow = MutableStateFlow(prefs.getBoolean(KEY_LOGIN_WX, false))
+    val loginWxFlow: StateFlow<Boolean> = _loginWxFlow.asStateFlow()
+
+    fun setLoginWx(useWx: Boolean) {
+        prefs.edit().putBoolean(KEY_LOGIN_WX, useWx).apply()
+        _loginWxFlow.value = useWx
     }
 
     /** 显示形态（方表/圆表 UI）：覆盖系统屏幕形状识别，驱动全 app 两套布局 */
@@ -200,6 +243,7 @@ class SettingsStore(context: Context) {
         const val KEY_PROGRESS_STYLE = "progress_style"
         const val KEY_QPLAY_ENABLED = "qplay_enabled"
         const val KEY_QPLAY_UDN = "qplay_udn"
+        const val KEY_LOGIN_WX = "login_use_wechat"
     }
 }
 
@@ -219,21 +263,7 @@ class HistoryStore(context: Context) {
         val text = prefs.getString(KEY_RECENT, null) ?: return emptyList()
         json.parseToJsonElement(text).jsonArray
             .filterIsInstance<JsonObject>()
-            .mapNotNull { obj ->
-                val mid = obj.str("mid")
-                if (mid.isEmpty()) return@mapNotNull null
-                Song(
-                    songId = obj.long("songId"),
-                    mid = mid,
-                    name = obj.str("name"),
-                    singers = obj.str("singers"),
-                    albumName = obj.str("albumName"),
-                    albumMid = obj.str("albumMid"),
-                    mediaMid = obj.str("mediaMid"),
-                    intervalSec = obj.int("intervalSec"),
-                    songType = obj.int("songType"),
-                )
-            }
+            .mapNotNull { SongJson.decode(it) }
     }.getOrDefault(emptyList())
 
     suspend fun record(song: Song) {
@@ -253,19 +283,7 @@ class HistoryStore(context: Context) {
 
     private fun persist(songs: List<Song>) {
         val arr = buildJsonArray {
-            songs.forEach { s ->
-                add(buildJsonObject {
-                    put("songId", s.songId)
-                    put("mid", s.mid)
-                    put("name", s.name)
-                    put("singers", s.singers)
-                    put("albumName", s.albumName)
-                    put("albumMid", s.albumMid)
-                    put("mediaMid", s.mediaMid)
-                    put("intervalSec", s.intervalSec)
-                    put("songType", s.songType)
-                })
-            }
+            songs.forEach { s -> SongJson.encode(s)?.let { add(it) } }
         }
         prefs.edit().putString(KEY_RECENT, arr.toString()).apply()
     }
@@ -328,21 +346,7 @@ class LocalLikesStore(context: Context) {
         val text = prefs.getString(KEY_LIKES, null) ?: return emptyList()
         json.parseToJsonElement(text).jsonArray
             .filterIsInstance<JsonObject>()
-            .mapNotNull { obj ->
-                val mid = obj.str("mid")
-                if (mid.isEmpty()) return@mapNotNull null
-                Song(
-                    songId = obj.long("songId"),
-                    mid = mid,
-                    name = obj.str("name"),
-                    singers = obj.str("singers"),
-                    albumName = obj.str("albumName"),
-                    albumMid = obj.str("albumMid"),
-                    mediaMid = obj.str("mediaMid"),
-                    intervalSec = obj.int("intervalSec"),
-                    songType = obj.int("songType"),
-                )
-            }
+            .mapNotNull { SongJson.decode(it) }
     }.getOrDefault(emptyList())
 
     fun add(song: Song) {
@@ -371,19 +375,7 @@ class LocalLikesStore(context: Context) {
 
     private fun persist(songs: List<Song>) {
         val arr = buildJsonArray {
-            songs.forEach { s ->
-                add(buildJsonObject {
-                    put("songId", s.songId)
-                    put("mid", s.mid)
-                    put("name", s.name)
-                    put("singers", s.singers)
-                    put("albumName", s.albumName)
-                    put("albumMid", s.albumMid)
-                    put("mediaMid", s.mediaMid)
-                    put("intervalSec", s.intervalSec)
-                    put("songType", s.songType)
-                })
-            }
+            songs.forEach { s -> SongJson.encode(s)?.let { add(it) } }
         }
         prefs.edit().putString(KEY_LIKES, arr.toString()).apply()
     }

@@ -1,5 +1,6 @@
 package com.qmusic.wear
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
 import com.qmusic.wear.data.api.Credential
@@ -24,10 +25,13 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import okio.Path.Companion.toPath
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
 /** 轻量 ServiceLocator */
+// 进程级单例：持有的 Context 为 applicationContext，生命周期与应用一致，非泄漏（lint 架构性误报）
+@SuppressLint("StaticFieldLeak")
 object ServiceLocator {
     private val appScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, e ->
@@ -55,6 +59,8 @@ object ServiceLocator {
     lateinit var player: PlayerConnection
         private set
     lateinit var downloads: com.qmusic.wear.data.download.DownloadManager
+        private set
+    lateinit var localMusic: com.qmusic.wear.data.local.LocalMusicScanner
         private set
     lateinit var searchHistory: com.qmusic.wear.data.store.SearchHistoryStore
         private set
@@ -102,14 +108,32 @@ object ServiceLocator {
         playStats = com.qmusic.wear.data.store.PlayStatsStore(appContext)
         repository = MusicRepository(api, localLikes)
         qrLogin = QrLoginManager()
+        // 前后台/亮灭屏感知先于播放器初始化（轮询休眠与常驻卡片收放依赖）
+        com.qmusic.wear.util.AppPresence.init(appContext)
         player = PlayerConnection(appContext, historyStore)
         downloads = com.qmusic.wear.data.download.DownloadManager(appContext, api.http)
+        localMusic = com.qmusic.wear.data.local.LocalMusicScanner(appContext)
         searchHistory = com.qmusic.wear.data.store.SearchHistoryStore(appContext)
         agreementStore = com.qmusic.wear.data.store.AgreementStore(appContext)
         lyricsCache = com.qmusic.wear.data.store.LyricsCache(appContext)
+        // 应用内检查更新（轻量服务器 version.json 优先，多镜像兜底）
+        com.qmusic.wear.data.update.AppUpdateManager.init(appContext)
 
         // QPlay 渲染器：跟随设置开关启停
-        qplayServer = com.qmusic.wear.data.qplay.QPlayServer(appContext, player)
+        qplayServer = com.qmusic.wear.data.qplay.QPlayServer(
+            appContext,
+            player,
+            onRemoteConnect = { ip ->
+                // 局域网设备首次投放：提示用户知晓（同网段可操控，非阻塞 SOAP 响应）
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(
+                        appContext,
+                        "设备 $ip 正在向手表投放音乐",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            },
+        )
         appScope.launch {
             settingsStore.qplayEnabledFlow.collect { enabled ->
                 runCatching {
@@ -163,6 +187,8 @@ object ServiceLocator {
 }
 
 /** 崩溃/未捕获异常落盘，主页展示摘要便于定位 */
+// 进程级单例：持有的 Context 为 applicationContext，生命周期与应用一致，非泄漏（lint 架构性误报）
+@SuppressLint("StaticFieldLeak")
 object CrashLog {
     private const val PREFS = "qmusic_crash"
     private const val KEY_UNREAD = "unread_fatal"
@@ -184,6 +210,7 @@ object CrashLog {
      * 未捕获的致命崩溃：落盘 + 打「未读」标记（commit 同步写盘，进程被杀也不丢）。
      * 下次启动由 MainActivity 用原生诊断页展示日志，用户可复制反馈。
      */
+    @SuppressLint("ApplySharedPref") // 崩溃场景必须同步落盘，apply 异步写可能丢失
     fun markFatal(e: Throwable) {
         appendCrash(e)
         runCatching {
@@ -204,6 +231,7 @@ object CrashLog {
     }
 
     /** 读走上次致命崩溃日志（有标记才返回，读完清除标记）；无则返回 null */
+    @SuppressLint("ApplySharedPref") // 需在启动早期同步清除标记，避免重复展示诊断页
     fun consumeUnreadFatal(): String? = runCatching {
         if (!CrashLog::context.isInitialized) return null
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -242,6 +270,8 @@ class QMusicApp : Application(), SingletonImageLoader.Factory {
      * 全局图片加载器：走 OkHttp 网络引擎（Coil3 默认不含网络支持，必须显式配置），
      * 防盗链请求头由音乐源插件 manifest 提供（imageHostSuffix + imageHeaders），
      * 并开启淡入过渡。
+     *
+     * 缓存上限显式设定：手表内存/存储紧张，默认策略（内存占比 + 无界磁盘）易挤占资源。
      */
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
@@ -266,6 +296,19 @@ class QMusicApp : Application(), SingletonImageLoader.Factory {
                         },
                     ),
                 )
+            }
+            // 内存缓存：最多占用可用内存的 20%（手表 RAM 小，避免封面缓存挤压播放缓冲）
+            .memoryCache {
+                coil3.memory.MemoryCache.Builder()
+                    .maxSizePercent(context, 0.20)
+                    .build()
+            }
+            // 磁盘缓存：上限 64MB（封面为主，避免无界增长占满手表存储）
+            .diskCache {
+                coil3.disk.DiskCache.Builder()
+                    .directory(context.cacheDir.resolve("image_cache").absolutePath.toPath())
+                    .maxSizeBytes(64L * 1024 * 1024)
+                    .build()
             }
             // 低配置设备模式关闭图片交叉淡化（读取持久化设置；切换后重启生效）
             .crossfade(!ServiceLocator.settingsStore.lowPerfFlow.value)

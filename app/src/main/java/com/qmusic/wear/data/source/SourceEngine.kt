@@ -22,6 +22,7 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * 音乐源 JS 插件运行时（Rhino）。
@@ -42,7 +43,10 @@ class SourceEngine(
     }
     val dispatcher: CoroutineDispatcher = executor.asCoroutineDispatcher()
 
-    /** 扫码登录等事件回调（调用期间由 SourceManager 挂载） */
+    /**
+     * 扫码登录等事件回调（qmu.emit 的落地处）。
+     * 由 [call] 在引擎线程上按调用逐个绑定，不在调用方线程预装。
+     */
     @Volatile
     var eventSink: ((String) -> Unit)? = eventSink
 
@@ -72,6 +76,14 @@ class SourceEngine(
     @Volatile
     private var handlerNames: Set<String> = emptySet()
 
+    /**
+     * 当前调用是否已被宿主取消：扫码登录等长轮询 handler 每轮自查 [cancelled] 后尽早返回。
+     * 引擎是单线程的，不取消则新调用要排队等旧轮询跑完（可达数分钟）。
+     * 标记由 UI 线程写入，故 @Volatile；每次调用在引擎线程上开始时清零。
+     */
+    @Volatile
+    private var callCancelled = true
+
     private var scope: Scriptable? = null
 
     /**
@@ -100,8 +112,39 @@ class SourceEngine(
     /** 源已注册的 handler 名（未加载时为空集） */
     fun registeredHandlers(): Set<String> = handlerNames
 
-    /** 调用源脚本注册的处理器，返回 JSON 字符串（结果为 JSON.stringify 产物） */
-    suspend fun call(name: String, argsJson: String): String = withContext(dispatcher) {
+    /**
+     * 当前调用正在飞的那个 HTTP 请求（引擎线程写入、UI 线程取消，故用原子引用）。
+     *
+     * 取消标记靠 handler 自查才生效，而一次长轮询请求最长会占满 callTimeout（30s）：
+     * 光置标记的话，离开登录页后下一次调用仍要干等这次请求超时才能排到。
+     * 直接把请求掐断，引擎才能立刻腾出来。
+     */
+    private val inFlightCall = AtomicReference<okhttp3.Call?>(null)
+
+    /** 取消当前正在执行的调用（长轮询 handler 在下一轮检查时返回；已在排队的调用不受影响） */
+    fun cancelCurrentCall() {
+        callCancelled = true
+        // 同时掐掉正在飞的请求：否则要等它自己超时（最长 30s）引擎才轮到下一次调用
+        inFlightCall.get()?.cancel()
+    }
+
+    /**
+     * 调用源脚本注册的处理器，返回 JSON 字符串（结果为 JSON.stringify 产物）。
+     *
+     * [sink] 非空时在本次调用期间接管 qmu.emit 的事件回调，返回后还原给外层调用。
+     * 绑定与还原都必须发生在引擎线程上：调用是排队执行的，若在调用方线程提前装好，
+     * 任何并发的业务调用都会在登录链仍在跑时把 sink 换成自己的、结束时再置空，
+     * 于是 QrReady 事件静默丢失（表现为二维码一直转圈却不出现）。
+     */
+    suspend fun call(
+        name: String,
+        argsJson: String,
+        sink: ((String) -> Unit)? = null,
+    ): String = withContext(dispatcher) {
+        val outer = eventSink
+        if (sink != null) eventSink = sink
+        // 在引擎线程上开跑才清零：避免与上一个被取消的调用竞态（单线程串行，此处必然已脱离上一调用）
+        callCancelled = false
         val cx = Context.enter()
         try {
             cx.optimizationLevel = -1
@@ -115,6 +158,7 @@ class SourceEngine(
             invoke.call(cx, s, s, arrayOf(name, argsJson))?.toString() ?: "null"
         } finally {
             Context.exit()
+            eventSink = outer
         }
     }
 
@@ -269,9 +313,21 @@ class SourceEngine(
 
         // qmu.emit(eventJson)：扫码登录等事件回调
         putFn("emit") { args ->
-            eventSink?.invoke(args.getOrNull(0)?.toString().orEmpty())
+            val raw = args.getOrNull(0)?.toString().orEmpty()
+            val sink = eventSink
+            if (sink == null) {
+                // 事件被丢弃时留痕：否则「二维码不出现」这类问题在日志里完全无痕
+                Log.w("SourceEngine", "emit 丢弃（本次调用未注册事件回调）: ${raw.take(160)}")
+            } else {
+                runCatching { sink(raw) }.onFailure {
+                    Log.w("SourceEngine", "事件回调异常: ${it.message}")
+                }
+            }
             null
         }
+
+        // qmu.cancelled() -> bool：宿主是否已取消本次调用（登录轮询用）
+        putFn("cancelled") { _ -> callCancelled }
 
         // qmu.register({manifest, handlers})：源脚本入口
         putFn("register") { args ->
@@ -320,8 +376,10 @@ class SourceEngine(
         // 网络异常（含 TLS 校验失败）必须转成错误响应返回，绝不能把 Java 异常抛穿到 Rhino：
         // 否则会以 ClassCastException("... cannot be cast to java.lang.Error") 形式逃逸，
         // 使源脚本的 try/catch 失效、整个 handler 失败。
+        val call = client.newCall(builder.build())
+        inFlightCall.set(call)
         return try {
-            client.newCall(builder.build()).execute().use { resp ->
+            call.execute().use { resp ->
                 val bytes = resp.body?.bytes() ?: ByteArray(0)
                 "{" +
                     "\"status\":" + resp.code + "," +
@@ -333,9 +391,13 @@ class SourceEngine(
                     "}"
             }
         } catch (t: Throwable) {
-            Log.w("SourceEngine", "HTTP 失败 $method $url: ${t.message}")
+            // 被 cancelCurrentCall 掐掉的不算故障，降级到一行日志避免干扰排查
+            if (callCancelled) Log.d("SourceEngine", "HTTP 已取消 $method $url")
+            else Log.w("SourceEngine", "HTTP 失败 $method $url: ${t.message}")
             "{\"status\":0,\"location\":\"\",\"setCookie\":[],\"body\":\"\",\"bodyB64\":\"\",\"error\":" +
                 Jsons.quote(t.message ?: t.toString()) + "}"
+        } finally {
+            inFlightCall.set(null)
         }
     }
 }
@@ -380,6 +442,8 @@ data class CredentialSnapshot(
     val encryptUin: String = "",
     val nick: String = "",
     val avatarUrl: String = "",
+    /** 登录时下发的鉴权 Cookie 原文（`k=v; k=v`），由源插件合并进后续请求（微信账号体系必需） */
+    val authCookie: String = "",
     /**
      * 登录态：必须作为**可序列化字段**下发。
      * 计算属性不会进入 JSON，源脚本读 c.isLogged 会得到 undefined（曾导致酷狗 userProfile 恒返回 null）。

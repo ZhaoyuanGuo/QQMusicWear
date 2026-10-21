@@ -23,6 +23,7 @@ object LauncherAlias {
         "kugou-web" to "com.qmusic.wear.MainActivityKugou",
         "kugou-concept-web" to "com.qmusic.wear.MainActivityKugouConcept",
         "netease-web" to "com.qmusic.wear.MainActivityNetease",
+        "fanqie-music-web" to "com.qmusic.wear.MainActivityFanqieMusic",
     )
 
     /** 应用当前源对应的桌面入口；与上次一致则跳过 */

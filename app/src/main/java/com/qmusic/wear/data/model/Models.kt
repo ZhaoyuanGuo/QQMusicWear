@@ -160,6 +160,13 @@ data class FollowUser(
     val signature: String = "",
 )
 
+/** 听歌识曲结果（未识别到时 song 为 null） */
+data class RecognizeResult(
+    val song: Song? = null,
+    /** 置信度 0~1（源未提供时为 0） */
+    val confidence: Double = 0.0,
+)
+
 /** 播放模式 */
 enum class PlayMode(val label: String) {
     SEQUENTIAL("顺序播放"),

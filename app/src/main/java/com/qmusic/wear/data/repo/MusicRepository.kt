@@ -18,6 +18,7 @@ import com.qmusic.wear.data.api.djPrograms
 import com.qmusic.wear.data.api.djRadios
 import com.qmusic.wear.data.api.musicHallShelves
 import com.qmusic.wear.data.api.radioSongs
+import com.qmusic.wear.data.api.recognizeSong
 import com.qmusic.wear.data.api.songComments
 import com.qmusic.wear.data.api.userEvents
 import com.qmusic.wear.data.api.userFollows
@@ -36,6 +37,7 @@ import com.qmusic.wear.data.model.HomeCard
 import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.Quality
 import com.qmusic.wear.data.model.RadioStation
+import com.qmusic.wear.data.model.RecognizeResult
 import com.qmusic.wear.data.model.ResolvedUrl
 import com.qmusic.wear.data.model.SearchResult
 import com.qmusic.wear.data.model.Song
@@ -189,6 +191,11 @@ class MusicRepository(
     /** 关注的人；失败返回空列表 */
     suspend fun userFollows(uid: Long): List<FollowUser> =
         runCatching { api.userFollows(uid) }.getOrDefault(emptyList())
+
+    /** 听歌识曲；源未实现该能力或识别失败均返回空结果（song 为 null） */
+    suspend fun recognizeSong(audioB64: String, sampleRate: Int, durationMs: Long): RecognizeResult =
+        runCatching { api.recognizeSong(audioB64, sampleRate, durationMs) }
+            .getOrDefault(RecognizeResult())
 
     suspend fun searchSongs(query: String): List<Song> =
         searchAll(query).songs

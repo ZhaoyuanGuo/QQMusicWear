@@ -8,15 +8,16 @@ import androidx.compose.runtime.setValue
 
 /** 全部页面（状态机导航，配合 AnimatedContent 实现页面过渡） */
 internal enum class Screen {
-    Home, Player, Lyrics, Queue, Login, Recent, SongList, Settings, Downloads, Daily, Rank, Toplist, Square, Artist, Album,
-    Comments, Podcast, DjProgram, Social,
+    Home, Player, Lyrics, Queue, Login, Recent, SongList, Settings, Downloads, LocalMusic, Daily, Rank, Toplist, Square, Artist, Album,
+    Comments, Podcast, DjProgram, Social, Recognition,
 }
 
 /** 页面导航深度：驱动方向化转场（浅→深新页从右滑入，深→浅新页从左滑入） */
 internal fun navDepth(s: Screen): Int = when (s) {
     Screen.Home -> 0
     Screen.Player, Screen.Daily, Screen.Rank, Screen.Square, Screen.Recent, Screen.Settings, Screen.Downloads,
-    Screen.Podcast, Screen.Social,
+    Screen.LocalMusic,
+    Screen.Podcast, Screen.Social, Screen.Recognition,
     -> 1
     Screen.Lyrics, Screen.Queue, Screen.Login, Screen.SongList, Screen.Toplist, Screen.Artist, Screen.Album,
     Screen.Comments, Screen.DjProgram,
@@ -73,9 +74,11 @@ internal class ScreenNav(
         Screen.Toplist -> Screen.Rank
         Screen.SongList -> songListFrom
         Screen.Downloads -> downloadsFrom
+        Screen.LocalMusic -> Screen.Home
         Screen.Comments -> Screen.Player
         Screen.DjProgram -> Screen.Podcast
         Screen.Podcast, Screen.Social -> Screen.Home
+        Screen.Recognition -> Screen.Home
         else -> Screen.Home
     }
 

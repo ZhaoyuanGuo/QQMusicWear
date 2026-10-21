@@ -38,4 +38,6 @@ jobs:
             node tools/contract-test/verify_sig.js "$f" tools/source-signing/source_signing_public.key
             node tools/contract-test/run.js "$f"
             node tools/contract-test/mock_smoke.js "$f"
+            # 扫码登录链回环测试（mock 路由按 QQ 音乐 Web 链路编写，其它源自行跳过）
+            node tools/contract-test/login_flow.js "$f"
           done

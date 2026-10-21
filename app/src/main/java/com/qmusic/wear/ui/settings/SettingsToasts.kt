@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 
 /**
- * 设置页的三处结果提示：日志提取 / 音乐源更新 / 缓存清理。
+ * 设置页的四处结果提示：日志提取 / 音乐源更新 / 缓存清理 / 检查更新。
  * 由 ViewModel 的瞬时消息字段驱动，提示后立即消费清空。
  */
 @Composable
@@ -32,6 +32,14 @@ internal fun SettingsToasts(ui: SettingsUiState, vm: SettingsViewModel) {
         if (!msg.isNullOrEmpty()) {
             android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
             vm.dismissCacheClear()
+        }
+    }
+
+    LaunchedEffect(ui.updateCheckMessage) {
+        val msg = ui.updateCheckMessage
+        if (!msg.isNullOrEmpty()) {
+            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+            vm.dismissUpdateCheck()
         }
     }
 }

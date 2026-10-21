@@ -34,16 +34,18 @@ import com.qmusic.wear.R
 import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 
 /**
- * 搜索栏（歌曲/歌手/歌单）+ 右侧语音入口：
+ * 搜索栏（歌曲/歌手/歌单）+ 右侧听歌识曲入口：
  * 麦克风加大为深色圆底按钮（此前灰色裸图标过小、难以发现和点中）。
+ * [showRecognize] 为 false（当前源不支持识曲或设备无麦克风）时不渲染该按钮。
  */
 @Composable
 internal fun MineSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
-    onVoiceSearch: () -> Unit,
+    onRecognize: () -> Unit,
     onSearch: () -> Unit,
     modifier: Modifier = Modifier,
+    showRecognize: Boolean = true,
 ) {
     // 圆表顶部落在弧区（可用宽度最窄处），搜索框整条收薄；方表数值一律不变
     val isRound = LocalIsRoundScreen.current
@@ -111,22 +113,25 @@ internal fun MineSearchField(
                 }
                 // 文本编辑区占剩余宽度，麦克风固定在右侧
                 Box(Modifier.weight(1f)) { inner() }
-                // 语音搜索：深色圆底 + 图标（命中区与视觉一致）；圆表收薄
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(micBox)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.40f))
-                        .border(0.5.dp, Color.White.copy(alpha = 0.16f), CircleShape)
-                        .clickable(onClick = onVoiceSearch),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_mic),
-                        contentDescription = "语音搜索",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(micSize),
-                    )
+                // 听歌识曲：深色圆底 + 图标（命中区与视觉一致）；圆表收薄
+                // 当前源不支持识曲或设备无麦克风时不展示入口（能力探测，与播客/动态入口同一思路）
+                if (showRecognize) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(micBox)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.40f))
+                            .border(0.5.dp, Color.White.copy(alpha = 0.16f), CircleShape)
+                            .clickable(onClick = onRecognize),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_mic),
+                            contentDescription = "听歌识曲",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(micSize),
+                        )
+                    }
                 }
             }
         },

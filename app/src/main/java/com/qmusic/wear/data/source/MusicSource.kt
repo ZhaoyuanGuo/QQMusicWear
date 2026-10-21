@@ -57,6 +57,20 @@ object SourceRegistry {
             themeColor = 0xFFE23B2E,
             subtitle = "发现好音乐",
         ),
+        MusicSource(
+            id = "fanqie-music-web",
+            fileName = "fanqie_music_source.js",
+            displayName = "番茄音乐",
+            themeColor = 0xFFFF6A3D,
+            subtitle = "听歌",
+        ),
+        MusicSource(
+            id = "fanqie-audiobook-web",
+            fileName = "fanqie_audiobook_source.js",
+            displayName = "番茄畅听",
+            themeColor = 0xFFFF5252,
+            subtitle = "听书",
+        ),
     )
 
     val default: MusicSource = sources.first()

@@ -67,6 +67,7 @@ import com.qmusic.wear.ui.components.qmRotarySnap
 import com.qmusic.wear.ui.components.rememberHaptics
 import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 import com.qmusic.wear.ui.mine.MineOverlay
+import kotlinx.coroutines.launch
 
 /**
  * 首页 = 推荐大卡片流（由当前音乐源的 homeFeed 契约给出，数量与内容随源变化）：
@@ -78,12 +79,14 @@ fun HomeScreen(
     onOpenPlayer: () -> Unit,
     onOpenRecent: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenLocalMusic: () -> Unit = {},
     onOpenSettings: () -> Unit,
     onOpenPlaylist: (Long, String) -> Unit,
     onOpenArtist: (String, String) -> Unit = { _, _ -> },
     onOpenAlbum: (String, String) -> Unit = { _, _ -> },
     onOpenPodcast: () -> Unit = {},
     onOpenSocial: () -> Unit = {},
+    onOpenRecognition: () -> Unit = {},
     /** 卡片动作分发：action / targetId / 标题 */
     onOpenCard: (String, String, String) -> Unit,
     vm: HomeViewModel = viewModel(),
@@ -95,20 +98,63 @@ fun HomeScreen(
     var swipeAcc by remember { mutableFloatStateOf(0f) }
     val haptics = rememberHaptics()
 
-    // 离线兜底：无网时首页直接落到「已下载音乐」，推荐卡不可用不再整屏报错
+    // 离线兜底：无网时首页直接落到「已下载音乐」，推荐卡不可用不再整屏报错。
+    // 在线判定：系统验证标记（VALIDATED）为主 + 出网探测二次确认未验证网络，
+    // 并注册默认网络回调实时刷新——前台断网/恢复立即翻转，不再只依赖 ON_RESUME
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val downloads by ServiceLocator.downloads.downloadsFlow.collectAsStateWithLifecycle()
     var offline by remember { mutableStateOf(!com.qmusic.wear.util.isNetworkOnline(ctx)) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var probeJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    fun refreshOnline() {
+        when {
+            // 已通过系统出网验证：真在线
+            com.qmusic.wear.util.isNetworkOnline(ctx) -> offline = false
+            // 名义有网但未验证（刚连上/验证滞后/路由器断网）：出网探测确认，避免假在线
+            com.qmusic.wear.util.isNetworkUnverified(ctx) -> {
+                probeJob?.cancel()
+                probeJob = scope.launch {
+                    offline = !com.qmusic.wear.util.probeNetworkOnline()
+                }
+            }
+            // 无活动网络：立即离线
+            else -> offline = true
+        }
+    }
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val cm = ctx.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+            as android.net.ConnectivityManager
+        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                refreshOnline()
+            }
+
+            override fun onLost(network: android.net.Network) {
+                refreshOnline()
+            }
+
+            override fun onCapabilitiesChanged(
+                network: android.net.Network,
+                networkCapabilities: android.net.NetworkCapabilities,
+            ) {
+                // 系统验证完成/被吊销都会走这里（VALIDATED 标记变化）
+                refreshOnline()
+            }
+        }
+        runCatching { cm.registerDefaultNetworkCallback(callback) }
         val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                offline = !com.qmusic.wear.util.isNetworkOnline(ctx)
+                refreshOnline()
             }
         }
         lifecycleOwner.lifecycle.addObserver(obs)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(obs)
+            runCatching { cm.unregisterNetworkCallback(callback) }
+        }
     }
+    androidx.compose.runtime.LaunchedEffect(Unit) { refreshOnline() }
 
     Box(Modifier.fillMaxSize()) {
         QmScreenScaffold(
@@ -248,6 +294,7 @@ fun HomeScreen(
                     },
                     onOpenRecent = { showMenu = false; onOpenRecent() },
                     onOpenDownloads = { showMenu = false; onOpenDownloads() },
+                    onOpenLocalMusic = { showMenu = false; onOpenLocalMusic() },
                     onOpenSettings = { showMenu = false; onOpenSettings() },
                     onOpenPlaylist = { id, title ->
                         showMenu = false
@@ -263,6 +310,7 @@ fun HomeScreen(
                     },
                     onOpenPodcast = { showMenu = false; onOpenPodcast() },
                     onOpenSocial = { showMenu = false; onOpenSocial() },
+                    onOpenRecognition = { showMenu = false; onOpenRecognition() },
                 )
             }
         }

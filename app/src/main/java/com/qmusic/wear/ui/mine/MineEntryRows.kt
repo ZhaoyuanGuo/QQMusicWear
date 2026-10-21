@@ -16,11 +16,12 @@ import com.qmusic.wear.ui.components.GlassRow
 import com.qmusic.wear.ui.components.PlaylistRow
 import com.qmusic.wear.ui.components.SectionHeader
 
-/** 「我的」页尾部入口：我的歌单列表 → 下载管理 → 设置 */
+/** 「我的」页尾部入口：我的歌单列表 → 下载管理 → 本地音乐 → 设置 */
 internal fun ScalingLazyListScope.mineEntryRows(
     ui: MineUiState,
     onOpenPlaylist: (Long, String) -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenLocalMusic: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     // ---- 我的歌单 ----
@@ -51,6 +52,27 @@ internal fun ScalingLazyListScope.mineEntryRows(
                 Text("下载管理", style = MaterialTheme.typography.labelLarge)
                 Text(
                     "长按删除歌曲",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+
+    // ---- 本地音乐 ----
+    item {
+        GlassRow(onClick = onOpenLocalMusic) {
+            Icon(
+                painter = painterResource(R.drawable.ic_local),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(17.dp),
+            )
+            Spacer(Modifier.size(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("本地音乐", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "播放设备上已下载的音频",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

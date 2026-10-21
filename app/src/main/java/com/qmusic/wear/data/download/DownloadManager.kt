@@ -1,11 +1,11 @@
 package com.qmusic.wear.data.download
 
 import android.content.Context
-import com.qmusic.wear.data.api.int
 import com.qmusic.wear.data.api.long
 import com.qmusic.wear.data.api.str
 import com.qmusic.wear.data.model.ResolvedUrl
 import com.qmusic.wear.data.model.Song
+import com.qmusic.wear.data.store.SongJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,11 +17,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
 import java.io.File
 import android.os.StatFs
 
@@ -195,22 +193,9 @@ class DownloadManager(context: Context, private val http: okhttp3.OkHttpClient) 
         val text = prefs.getString(KEY_LIST, null) ?: return emptyList()
         json.parseToJsonElement(text).jsonArray.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
-            val mid = obj.str("mid")
-            if (mid.isEmpty()) return@mapNotNull null
+            val song = SongJson.decode(obj) ?: return@mapNotNull null
             Downloaded(
-                song = Song(
-                    songId = obj.long("songId"),
-                    mid = mid,
-                    name = obj.str("name"),
-                    singers = obj.str("singers"),
-                    albumName = obj.str("albumName"),
-                    albumMid = obj.str("albumMid"),
-                    mediaMid = obj.str("mediaMid"),
-                    intervalSec = obj.int("intervalSec"),
-                    songType = obj.int("songType"),
-                    cover300 = obj.str("cover300"),
-                    cover500 = obj.str("cover500"),
-                ),
+                song = song,
                 filePath = obj.str("filePath"),
                 prefix = obj.str("prefix"),
                 sizeBytes = obj.long("sizeBytes"),
@@ -222,24 +207,18 @@ class DownloadManager(context: Context, private val http: okhttp3.OkHttpClient) 
     private fun persist(list: List<Downloaded>) {
         val arr = buildJsonArray {
             list.forEach { d ->
-                add(buildJsonObject {
-                    put("songId", d.song.songId)
-                    put("mid", d.song.mid)
-                    put("name", d.song.name)
-                    put("singers", d.song.singers)
-                    put("albumName", d.song.albumName)
-                    put("albumMid", d.song.albumMid)
-                    put("mediaMid", d.song.mediaMid)
-                    put("intervalSec", d.song.intervalSec)
-                    put("songType", d.song.songType)
-                    // 封面必须落盘：否则重启后下载管理里的歌曲没有封面图
-                    put("cover300", d.song.cover300)
-                    put("cover500", d.song.cover500)
-                    put("filePath", d.filePath)
-                    put("prefix", d.prefix)
-                    put("sizeBytes", d.sizeBytes)
-                    put("downloadedAt", d.downloadedAt)
-                })
+                // 复用统一 Song 编码（含封面等字段，避免字段漏存），再并入下载专属字段
+                val songObj = SongJson.encode(d.song) ?: return@forEach
+                add(
+                    JsonObject(
+                        songObj + mapOf(
+                            "filePath" to JsonPrimitive(d.filePath),
+                            "prefix" to JsonPrimitive(d.prefix),
+                            "sizeBytes" to JsonPrimitive(d.sizeBytes),
+                            "downloadedAt" to JsonPrimitive(d.downloadedAt),
+                        ),
+                    ),
+                )
             }
         }
         prefs.edit().putString(KEY_LIST, arr.toString()).apply()

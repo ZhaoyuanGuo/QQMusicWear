@@ -18,17 +18,21 @@ import com.qmusic.wear.ServiceLocator
 import com.qmusic.wear.data.model.ResolvedUrl
 import com.qmusic.wear.data.model.Song
 import com.qmusic.wear.data.store.HistoryStore
+import com.qmusic.wear.data.store.SongJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.onTimeout
+import kotlinx.coroutines.selects.select
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -80,6 +84,9 @@ class PlayerConnection(
 
     /** 上次快照时间（轮询节流用） */
     private var lastPersistMs = 0L
+
+    /** 轮询唤醒信号：用户操作/亮屏/回前台时发信，让休眠中的循环立即刷新 */
+    private val wakeSignal = Channel<Unit>(Channel.CONFLATED)
 
     private val mainExecutor: java.util.concurrent.Executor
         get() = ContextCompat.getMainExecutor(context)
@@ -182,9 +189,12 @@ class PlayerConnection(
                 // 启动恢复的队列是空地址占位项（about:blank）：解析成功即续播，
                 // 解析失败静默跳下一首（避免整队列每首都弹一次「无法播放」）
                 val placeholder = currentUrls.getOrNull(index)?.url.isNullOrBlank()
+                // 本地文件（file:// 或 content://）播放失败：无法通过网络重解析，直接跳过（不误弹「版权限制」）
+                val localUrl = currentUrls.getOrNull(index)?.url.orEmpty()
+                val isLocal = localUrl.startsWith("file://") || localUrl.startsWith("content://")
                 failStreak++
                 scope.launch {
-                    if (failStreak == 1 || placeholder) {
+                    if (!isLocal && (failStreak == 1 || placeholder)) {
                         resolveFallback(song)?.let { fallback ->
                             replaceUrl(index, fallback)
                             return@launch
@@ -205,8 +215,30 @@ class PlayerConnection(
                         }
                     } else {
                         failStreak = 0
-                        toast("连续多首无法播放，已停止（多为网络或版权限制）")
-                        mainExecutor.execute { controller?.pause() }
+                        // 断网兜底最后一环：确认真无网且本地有下载时，自动切换到
+                        // 已下载列表继续播放（队列本来就是下载列表时不重复切换，防循环）
+                        val netOk = if (com.qmusic.wear.util.isNetworkOnline(context)) {
+                            true
+                        } else {
+                            com.qmusic.wear.util.isNetworkUnverified(context) &&
+                                com.qmusic.wear.util.probeNetworkOnline()
+                        }
+                        val dlSongs = ServiceLocator.downloads.downloadsFlow.value.map { it.song }
+                        val alreadyDownloads = dlSongs.isNotEmpty() &&
+                            currentQueue.map { it.mid } == dlSongs.map { it.mid }
+                        if (!netOk && dlSongs.isNotEmpty() && !alreadyDownloads) {
+                            playFromList(dlSongs, dlSongs.first().mid)
+                            toast("无网络，已自动切换到已下载歌曲（${dlSongs.size}首）")
+                        } else {
+                            toast(
+                                when {
+                                    netOk -> "连续多首无法播放，已停止（多为网络或版权限制）"
+                                    alreadyDownloads -> "已下载歌曲播放失败，已停止（本地文件可能异常）"
+                                    else -> "当前无网络，且暂无已下载歌曲可离线播放"
+                                }
+                            )
+                            mainExecutor.execute { controller?.pause() }
+                        }
                     }
                 }
             }
@@ -234,9 +266,7 @@ class PlayerConnection(
         val current = runCatching { ServiceLocator.settingsStore.quality() }
             .getOrDefault(com.qmusic.wear.data.model.Quality.STANDARD)
         // 含当前档位本身：标准档没有更低档可降，只降档会导致兜底完全失效
-        val candidates = com.qmusic.wear.data.model.Quality.entries
-            .filter { it.ordinal <= current.ordinal }
-            .sortedByDescending { it.ordinal }
+        val candidates = PlaybackFallback.qualityCandidates(current)
         for (q in candidates) {
             val r = runCatching {
                 ServiceLocator.repository.resolveUrls(listOf(song), q).firstOrNull()
@@ -270,15 +300,31 @@ class PlayerConnection(
     }
 
     private fun startPolling(c: MediaController) {
+        // 前后台/亮灭屏翻转为交互态时立即唤醒轮询（后台灭屏未播放时循环处于休眠档）
+        scope.launch {
+            com.qmusic.wear.util.AppPresence.interactiveFlow.collectLatest { interactive ->
+                if (interactive) signalWake()
+            }
+        }
+
         scope.launch {
             while (true) {
-                publish(c)
-                // 播放中每 5 秒快照一次进度，进程被杀也能恢复到最近位置
-                // （序列化走 IO 线程，避免主线程周期性抖动）
-                if (c.isPlaying && !restoring && currentQueue.isNotEmpty()) {
-                    val now = System.currentTimeMillis()
-                    if (now - lastPersistMs >= 5000) {
-                        lastPersistMs = now
+                val dormant = !c.isPlaying &&
+                    !com.qmusic.wear.util.AppPresence.interactive &&
+                    !wakePending
+                if (!dormant) {
+                    publish(c)
+                    // 播放中每 5 秒快照一次进度，进程被杀也能恢复到最近位置
+                    // （序列化走 IO 线程，避免主线程周期性抖动）
+                    val sinceLast = System.currentTimeMillis() - lastPersistMs
+                    if (PollingPolicy.shouldPersist(
+                            isPlaying = c.isPlaying,
+                            restoring = restoring,
+                            queueEmpty = currentQueue.isEmpty(),
+                            sinceLastPersistMs = sinceLast,
+                        )
+                    ) {
+                        lastPersistMs = System.currentTimeMillis()
                         val queueSnapshot = currentQueue.toList()
                         val index = c.currentMediaItemIndex
                         val positionMs = c.currentPosition
@@ -287,9 +333,40 @@ class PlayerConnection(
                         }
                     }
                 }
-                delay(500)
+                wakePending = false
+                // 休眠档：长睡等待唤醒信号（亮屏/起播立即醒）；兜底唤醒采用
+                // 指数退避（2s→60s 封顶），静止时几乎不耗电，又接住无信号的
+                // 远端变化（如 QPlay 手机投放、监听器未触发的状态改变）
+                val interval = PollingPolicy.intervalMs(
+                    isPlaying = c.isPlaying,
+                    interactive = com.qmusic.wear.util.AppPresence.interactive,
+                )
+                if (interval >= PollingPolicy.DORMANT_MS) {
+                    fallbackMs = minOf(fallbackMs * 2, PollingPolicy.DORMANT_MS)
+                    // 信号先到则补刷新；否则等满兜底间隔自动醒
+                    val signaled = select {
+                        wakeSignal.onReceive { true }
+                        onTimeout(fallbackMs) { false }
+                    }
+                    wakePending = signaled
+                } else {
+                    fallbackMs = PollingPolicy.IDLE_MS
+                    delay(interval)
+                }
             }
         }
+    }
+
+    /** 休眠等待被唤醒信号打断时置位：醒来先补一次刷新再进入正常节奏 */
+    @Volatile
+    private var wakePending = false
+
+    /** 休眠期兜底唤醒间隔（指数退避当前值），进入休眠时从 2s 起翻倍 */
+    private var fallbackMs = PollingPolicy.IDLE_MS
+
+    /** 让休眠中的轮询循环立即醒来刷新（用户操作/状态发布时调用） */
+    private fun signalWake() {
+        wakeSignal.trySend(Unit)
     }
 
     private fun publish(c: MediaController) {
@@ -303,6 +380,9 @@ class PlayerConnection(
             durationMs = c.duration.takeIf { it > 0 } ?: 0L,
             qualityPrefix = currentUrls.getOrNull(index)?.prefix.orEmpty(),
         )
+        // 任何状态发布都顺带唤醒轮询：休眠中收到远端指令（如 QPlay 起播）
+        // 也能立即切到正常节奏，不必等 60s 兜底
+        signalWake()
     }
 
     /** 用解析好的地址填充队列并开始播放（MediaController 未就绪时暂存，连接后自动播放） */
@@ -329,6 +409,7 @@ class PlayerConnection(
         if (c.playbackState == Player.STATE_IDLE && c.mediaItemCount > 0) c.prepare()
         c.seekTo(index, 0)
         c.play()
+        publishNow()
     }
 
     /**
@@ -437,6 +518,25 @@ class PlayerConnection(
         }
     }
 
+    /**
+     * 播放本地音频列表（本地音乐）：直接用 file:// 或 content:// 地址入队播放，
+     * 不走音乐源网络解析。[songs] 与 [uris] 一一对应；空地址不入队。
+     */
+    fun playLocal(songs: List<Song>, uris: List<String>, startIndex: Int = 0) {
+        val playable = songs.zip(uris).filter { (_, u) ->
+            u.isNotBlank() && (u.startsWith("content://") || u.startsWith("file://"))
+        }
+        if (playable.isEmpty()) {
+            mainExecutor.execute {
+                android.widget.Toast.makeText(context, "本地文件不存在或已被移除", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+        val urls = playable.map { (_, u) -> ResolvedUrl(url = u, prefix = "LOCAL") }
+        val idx = startIndex.coerceIn(0, playable.lastIndex)
+        play(playable.map { it.first }, urls, idx)
+    }
+
     fun togglePlayPause() {
         val c = controller ?: return
         if (c.isPlaying) {
@@ -446,6 +546,7 @@ class PlayerConnection(
             if (c.playbackState == Player.STATE_IDLE && c.mediaItemCount > 0) c.prepare()
             c.play()
         }
+        publishNow()
     }
 
     /** 直接暂停（睡眠定时器到时调用） */
@@ -463,6 +564,13 @@ class PlayerConnection(
 
     fun seekTo(positionMs: Long) {
         controller?.seekTo(positionMs)
+        // 暂停时轮询降频到 2s，seek 后立即刷新，避免进度条回跳/滞后
+        publishNow()
+    }
+
+    /** 立即刷新一次对外状态（用户交互后调用，不依赖轮询周期） */
+    private fun publishNow() {
+        controller?.let { publish(it) }
     }
 
     /**
@@ -578,22 +686,7 @@ private class QueueStore(context: Context) {
         val text = prefs.getString(KEY_SNAPSHOT, null) ?: return null
         val obj = json.parseToJsonElement(text).jsonObject
         val queue = obj["queue"]?.jsonArray?.mapNotNull { el ->
-            val s = el as? JsonObject ?: return@mapNotNull null
-            if (s.str("mid").isEmpty()) return@mapNotNull null
-            Song(
-                songId = s.long("songId"),
-                mid = s.str("mid"),
-                name = s.str("name"),
-                singers = s.str("singers"),
-                albumName = s.str("albumName"),
-                albumMid = s.str("albumMid"),
-                mediaMid = s.str("mediaMid"),
-                intervalSec = s.int("intervalSec"),
-                songType = s.int("songType"),
-                vip = (s["vip"] as? JsonPrimitive)?.content == "true",
-                cover300 = s.str("cover300"),
-                cover500 = s.str("cover500"),
-            )
+            SongJson.decode(el as? JsonObject ?: return@mapNotNull null)
         }.orEmpty()
         if (queue.isEmpty()) return null
         QueueSnapshot(
@@ -613,22 +706,7 @@ private class QueueStore(context: Context) {
             put("positionMs", positionMs)
             put("ts", System.currentTimeMillis())
             put("queue", buildJsonArray {
-                kept.forEach { s ->
-                    add(buildJsonObject {
-                        put("songId", s.songId)
-                        put("mid", s.mid)
-                        put("name", s.name)
-                        put("singers", s.singers)
-                        put("albumName", s.albumName)
-                        put("albumMid", s.albumMid)
-                        put("mediaMid", s.mediaMid)
-                        put("intervalSec", s.intervalSec)
-                        put("songType", s.songType)
-                        put("vip", s.vip)
-                        put("cover300", s.cover300)
-                        put("cover500", s.cover500)
-                    })
-                }
+                kept.forEach { s -> SongJson.encode(s)?.let { add(it) } }
             })
         }
         prefs.edit().putString(KEY_SNAPSHOT, obj.toString()).apply()

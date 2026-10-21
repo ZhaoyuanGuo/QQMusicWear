@@ -7,6 +7,7 @@
     <string name="app_name_kugou">酷狗音乐</string>
     <string name="app_name_kugou_concept">酷狗概念版</string>
     <string name="app_name_netease">网易云音乐</string>
+    <string name="app_name_fanqie_music">番茄音乐</string>
 
     <!-- 无障碍描述 -->
     <string name="cd_prev">上一首</string>
@@ -33,7 +34,11 @@
 
     <!-- 登录页 -->
     <string name="login_title">扫码登录</string>
-    <string name="login_wait_scan">请用手机 %1$s 扫码</string>
+    <string name="login_scan_qq">请用手机 %1$s 扫码</string>
+    <string name="login_scan_wx">请用微信「扫一扫」扫码</string>
+    <string name="login_type_qq">QQ</string>
+    <string name="login_type_wx">微信</string>
+    <string name="login_wx_tip">微信与 QQ 账号的音乐资产不互通</string>
     <string name="login_scanned">已扫码，请在手机上确认</string>
     <string name="login_expired">二维码已过期</string>
     <string name="login_success">登录成功</string>

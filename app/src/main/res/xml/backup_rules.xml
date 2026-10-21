@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12 以下（API 27-30）的备份规则。
+  当前应用 allowBackup=false（完全关闭备份），本文件作为防御性声明：
+  即使未来 allowBackup 被改回 true，凭据、下载、播放记录等本地数据也不外流。
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+</full-backup-content>

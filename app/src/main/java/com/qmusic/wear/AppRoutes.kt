@@ -10,6 +10,7 @@ import com.qmusic.wear.ui.downloads.DownloadsScreen
 import com.qmusic.wear.ui.home.DailyScreen
 import com.qmusic.wear.ui.home.HomeScreen
 import com.qmusic.wear.ui.list.SongListScreen
+import com.qmusic.wear.ui.local.LocalMusicScreen
 import com.qmusic.wear.ui.login.LoginScreen
 import com.qmusic.wear.ui.lyrics.LyricsScreen
 import com.qmusic.wear.ui.mine.RecentScreen
@@ -20,6 +21,7 @@ import com.qmusic.wear.ui.queue.QueueScreen
 import com.qmusic.wear.ui.recommend.RankScreen
 import com.qmusic.wear.ui.recommend.SquareScreen
 import com.qmusic.wear.ui.recommend.ToplistScreen
+import com.qmusic.wear.ui.recognition.RecognitionScreen
 import com.qmusic.wear.ui.settings.SettingsScreen
 import com.qmusic.wear.ui.social.SocialScreen
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +46,7 @@ internal fun AppRoute(
                 nav.downloadsFrom = Screen.Home
                 nav.screen = Screen.Downloads
             },
+            onOpenLocalMusic = { nav.screen = Screen.LocalMusic },
             onOpenSettings = { nav.screen = Screen.Settings },
             onOpenPlaylist = { id, title ->
                 nav.songListId = id
@@ -65,6 +68,7 @@ internal fun AppRoute(
                 nav.socialUid = ServiceLocator.credential.value.musicid
                 nav.screen = Screen.Social
             },
+            onOpenRecognition = { nav.screen = Screen.Recognition },
             // 首页大卡动作分发（随音乐源变化，数量与类型不固定）
             onOpenCard = { action, targetId, title ->
                 when (action) {
@@ -156,6 +160,12 @@ internal fun AppRoute(
 
         Screen.Downloads -> SwipeBackBox(onBack = { nav.screen = nav.backTarget(Screen.Downloads) }) {
             DownloadsScreen(
+                onOpenPlayer = { nav.screen = Screen.Player },
+            )
+        }
+
+        Screen.LocalMusic -> SwipeBackBox(onBack = { nav.screen = nav.backTarget(Screen.LocalMusic) }) {
+            LocalMusicScreen(
                 onOpenPlayer = { nav.screen = Screen.Player },
             )
         }
@@ -257,6 +267,12 @@ internal fun AppRoute(
         Screen.Social -> SwipeBackBox(onBack = { nav.screen = Screen.Home }) {
             SocialScreen(
                 uid = nav.socialUid,
+                onOpenPlayer = { nav.screen = Screen.Player },
+            )
+        }
+
+        Screen.Recognition -> SwipeBackBox(onBack = { nav.screen = Screen.Home }) {
+            RecognitionScreen(
                 onOpenPlayer = { nav.screen = Screen.Player },
             )
         }

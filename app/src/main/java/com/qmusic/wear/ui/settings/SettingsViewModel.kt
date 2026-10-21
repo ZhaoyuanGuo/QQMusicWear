@@ -44,6 +44,8 @@ data class SettingsUiState(
     val sourceVersion: Int = 0,
     /** 源更新状态：null=空闲，""=更新中，非空=结果提示 */
     val sourceUpdateMessage: String? = null,
+    /** 检查应用更新：null=空闲，""=检查中，非空=结果提示（新版本走全局弹窗，不在此提示） */
+    val updateCheckMessage: String? = null,
     /** 全部可选音乐源 */
     val sources: List<com.qmusic.wear.data.source.MusicSource> =
         com.qmusic.wear.data.source.SourceRegistry.sources,
@@ -284,6 +286,22 @@ class SettingsViewModel : ViewModel() {
 
     fun dismissSourceUpdate() {
         _ui.value = _ui.value.copy(sourceUpdateMessage = null)
+    }
+
+    /** 检查应用更新（设置页手动，无视 24h 节流）：结果 Toast；有新版本返回 null 改走全局弹窗 */
+    fun checkUpdate() {
+        if (_ui.value.updateCheckMessage == "") return
+        _ui.value = _ui.value.copy(updateCheckMessage = "")
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val msg = runCatching {
+                com.qmusic.wear.data.update.AppUpdateManager.checkManually()
+            }.getOrDefault("检查失败：未知错误")
+            _ui.value = _ui.value.copy(updateCheckMessage = msg)
+        }
+    }
+
+    fun dismissUpdateCheck() {
+        _ui.value = _ui.value.copy(updateCheckMessage = null)
     }
 
     fun cancelLogout() {

@@ -113,9 +113,78 @@ const KUGOU = [
 // 酷狗主站与酷狗概念版共用同一套接口与样例（仅 appid/解析节点不同）
 const isKugouSrc = src.indexOf("id: 'kugou-web'") >= 0 || src.indexOf("id: 'kugou-concept-web'") >= 0;
 const isKugouConcept = src.indexOf("id: 'kugou-concept-web'") >= 0;
+
+// ---------------------------------------------------------------------------
+// 番茄音乐（NovelFM）：搜索走 JSON API，歌词/榜单/直链兜底走 SSR 页
+// ---------------------------------------------------------------------------
+
+/** 构造 SSR 页 HTML：源脚本用 window._ROUTER_DATA 正则提取 */
+const fqSSR = (data) => 'window._ROUTER_DATA = ' + JSON.stringify(data) + ';</script>';
+
+const FQ_BOOK = {
+  book_id: '7565796622534183961', book_name: '测试曲目', audio_duration: 211,
+  thumb_url: 'https://p1-novelfm.novelfmvod.com/x.jpg',
+  author_infos: [{ name: '歌手甲' }, { name: '歌手乙' }],
+  common_book_info: { album_title: '专辑甲' },
+};
+
+/** m 站歌曲页 SSR：歌词 + 直链兜底共用 */
+const FQ_M_SSR = fqSSR({
+  loaderData: {
+    'music_(7565796622534183961)/page': {
+      pageData: {
+        lyric_type: 1,
+        lyric_info: '[00:00.000]第一句\n[00:03.500]第二句',
+        api_book_info: FQ_BOOK,
+        video_info: { main_url: 'https://v1-novelfm.novelfmvod.com/ssr.m4a' },
+      },
+    },
+  },
+});
+
+/** 官网首页 SSR：热歌榜分组 */
+const FQ_WWW_SSR = fqSSR({
+  loaderData: {
+    page: {
+      homeData: {
+        data: {
+          hot_list_groups: [
+            { id: '1', tab_name: '热歌榜', hot_list: [FQ_BOOK, { book_id: '7565796622534183962', book_name: '第二首', audio_duration: 180, author: '歌手丙' }] },
+          ],
+        },
+      },
+    },
+  },
+});
+
+const FANQIE = [
+  ['bookmall/search/page', {
+    code: 0,
+    data: { search_data: [{ books: [FQ_BOOK] }] },
+  }],
+  // video_model 为 JSON 字符串，需二次解析（源脚本已处理）
+  ['playerapi/video_model', {
+    code: 0,
+    data: {
+      video_model_datas: [{
+        video_model: JSON.stringify({
+          status: 10,
+          video_list: [{
+            video_meta: { quality: 'higher', size: 3400000 },
+            main_url: 'https://v1-novelfm.novelfmvod.com/api.m4a',
+          }],
+        }),
+      }],
+    },
+  }],
+  ['m.novelfm.com/music/', FQ_M_SSR],
+  ['www.novelfm.com/', FQ_WWW_SSR],
+];
+
 const TABLE = src.indexOf("id: 'netease-web'") >= 0 ? NET_EASE
-  : isKugouSrc ? KUGOU
-    : null;
+  : src.indexOf("id: 'fanqie-music-web'") >= 0 ? FANQIE
+    : isKugouSrc ? KUGOU
+      : null;
 if (!TABLE) {
   // 未内置模拟样例的源（如 QQ音乐）：跳过而非失败，便于 CI 统一遍历
   console.log('SKIP mock smoke（无模拟样例）: ' + scriptPath);
@@ -138,7 +207,8 @@ global.qmu = {
     for (const [frag, body] of TABLE) {
       if (url.indexOf(frag) >= 0) { payload = body; break; }
     }
-    const bodyText = JSON.stringify(payload);
+    // 字符串 payload 视为原始响应体（SSR HTML 需原样返回，不能再 JSON 编码）
+    const bodyText = typeof payload === 'string' ? payload : JSON.stringify(payload);
     return JSON.stringify({
       status: 200, location: '', setCookie: [], body: bodyText,
       bodyB64: Buffer.from(bodyText, 'utf8').toString('base64'),
@@ -171,6 +241,7 @@ new Function('qmu', src)(global.qmu);
 if (!registered) { console.error('FAIL: 未注册'); process.exit(1); }
 const H = registered.handlers;
 const isNe = registered.manifest.id === 'netease-web';
+const isFq = registered.manifest.id === 'fanqie-music-web';
 
 let failed = false;
 function check(name, cond, extra) {
@@ -181,33 +252,66 @@ function check(name, cond, extra) {
 // ---- homeFeed ----
 console.log('== homeFeed ==');
 const feed = H.homeFeed({});
-check('cards 非空', Array.isArray(feed.cards) && feed.cards.length >= 3, feed.cards && feed.cards.length);
+// 番茄为「热歌 + 榜单」两张卡；其余源至少 3 张
+check('cards 非空', Array.isArray(feed.cards) && feed.cards.length >= (isFq ? 2 : 3), feed.cards && feed.cards.length);
 const daily = feed.cards.find((c) => c.action === 'daily');
 check('daily 卡含歌曲', daily && daily.songs && daily.songs.length > 0);
-check('mid 前缀正确', daily && daily.songs[0].mid.indexOf(isNe ? 'ne_' : 'kg_') === 0, daily && daily.songs[0].mid);
-check('封面已裁尺寸', daily && /300|\/240\//.test(daily.songs[0].cover300), daily && daily.songs[0].cover300);
+const midPrefix = isNe ? 'ne_' : isFq ? 'fq_' : 'kg_';
+check('mid 前缀正确', daily && daily.songs[0].mid.indexOf(midPrefix) === 0, daily && daily.songs[0].mid);
+if (!isFq) {
+  check('封面已裁尺寸', daily && /300|\/240\//.test(daily.songs[0].cover300), daily && daily.songs[0].cover300);
+}
 
 // ---- searchAll ----
 console.log('== searchAll ==');
 const search = H.searchAll({ query: 'test' });
 check('歌曲非空', search.songs.length > 0, search.songs.length);
-check('歌手非空', search.singers.length > 0, search.singers.length);
-check('歌单非空', search.playlists.length > 0, search.playlists.length);
-if (!isNe) check('搜索歌曲含封面', /^https?:\/\/imge\.kugou\.com\/.*\/240\//.test(search.songs[0].cover300), search.songs[0].cover300);
+if (isFq) {
+  // 平台仅歌曲搜索，专辑/歌手/歌单无公开接口：如实返回空数组而非编造
+  check('歌手为空数组', Array.isArray(search.singers) && search.singers.length === 0, search.singers);
+  check('歌单为空数组', Array.isArray(search.playlists) && search.playlists.length === 0, search.playlists);
+  check('歌手名拼接', search.songs[0].singers === '歌手甲/歌手乙', search.songs[0].singers);
+  check('专辑名透传', search.songs[0].albumName === '专辑甲', search.songs[0].albumName);
+  check('时长换算', search.songs[0].intervalSec === 211, search.songs[0].intervalSec);
+  check('bookId 承载于 albumMid', search.songs[0].albumMid === '7565796622534183961', search.songs[0].albumMid);
+} else {
+  check('歌手非空', search.singers.length > 0, search.singers.length);
+  check('歌单非空', search.playlists.length > 0, search.playlists.length);
+}
+if (!isNe && !isFq) check('搜索歌曲含封面', /^https?:\/\/imge\.kugou\.com\/.*\/240\//.test(search.songs[0].cover300), search.songs[0].cover300);
 
 // ---- playlistDetail ----
 console.log('== playlistDetail ==');
-const pd = H.playlistDetail({ disstid: 5, page: 1, num: 100 });
-check('歌单名', !!pd.playlist && pd.playlist.name.length > 0, pd.playlist);
-check('歌单含歌曲', pd.songs.length > 0, pd.songs.length);
+if (isFq) {
+  // 平台无歌单体系：如实返回空，不得抛异常
+  const pdEmpty = H.playlistDetail({ disstid: 5, page: 1, num: 100 });
+  check('歌单为空对象', pdEmpty.playlist === null && pdEmpty.songs.length === 0, pdEmpty);
+} else {
+  const pd = H.playlistDetail({ disstid: 5, page: 1, num: 100 });
+  check('歌单名', !!pd.playlist && pd.playlist.name.length > 0, pd.playlist);
+  check('歌单含歌曲', pd.songs.length > 0, pd.songs.length);
+}
 
 // ---- toplists ----
 console.log('== toplists ==');
 const tl = H.toplists({});
 check('榜单非空', tl.length > 0 && tl[0].topId > 0, tl);
+if (isFq) {
+  check('榜单标题', tl[0].title === '热歌榜', tl[0].title);
+  check('榜单歌曲', H.toplistSongs({ topId: tl[0].topId }).length > 0);
+}
 
 // ---- 我的歌单 / 评论（需登录；酷狗走网关云歌单与评论服务） ----
-if (!isNe) {
+if (isFq) {
+  // 平台免登录、无账号/歌单/评论体系：相关能力如实返回空/false/null，不抛异常
+  console.log('== fanqie-music 不支持能力如实降级 ==');
+  check('myPlaylists 为空', H.myPlaylists({}).length === 0);
+  check('favPlaylists 为空', H.favPlaylists({}).length === 0);
+  check('userProfile 为 null', H.userProfile({}) === null);
+  check('setLike 为 false', H.setLike({ songId: 1, like: true }) === false);
+  check('lyricTrans 为空串', H.lyricTrans({}) === '');
+  check('lyricRoma 为空串', H.lyricRoma({}) === '');
+} else if (!isNe) {
   console.log('== myPlaylists / songComments ==');
   mockLogged = true;
   const mpl = H.myPlaylists({});
@@ -265,13 +369,19 @@ if (!isNe) {
 console.log('== resolveUrls ==');
 const ru = H.resolveUrls({
   quality: 'HIGH',
-  songs: [{ mid: isNe ? 'ne_1' : 'kg_ABCDEF0123456789', songId: isNe ? 1 : 11, mediaMid: '', songType: 0 }],
+  songs: [isFq
+    ? { mid: 'fq_7565796622534183961', mediaMid: '7565796622534183961', songId: 0, songType: 0 }
+    : { mid: isNe ? 'ne_1' : 'kg_ABCDEF0123456789', songId: isNe ? 1 : 11, mediaMid: '', songType: 0 }],
 });
 check('解析结果 1 条', ru.items.length === 1, ru.items.length);
 check('直链存在', ru.items[0] && ru.items[0].url.indexOf('http') === 0, ru.items[0]);
 check('未加密', ru.items[0] && ru.items[0].encrypted === false);
 check('音质前缀存在', ru.items[0] && !!ru.items[0].prefix, ru.items[0] && ru.items[0].prefix);
-if (!isNe) {
+if (isFq) {
+  // video_model 走 LITE 通道，命中的 higher 档应回标 128k 前缀、扩展名 m4a
+  check('音质前缀为 128k', ru.items[0] && ru.items[0].prefix === '128k', ru.items[0] && ru.items[0].prefix);
+  check('扩展名为 m4a', ru.items[0] && ru.items[0].ext === 'm4a', ru.items[0] && ru.items[0].ext);
+} else if (!isNe) {
   // 会员曲解析：trackercdn 请求须附带登录票据与 album_id（否则会员曲返回 status=2 / ec=20017）
   mockLogged = true;
   lastUrls = [];
@@ -284,23 +394,31 @@ if (!isNe) {
 
 // ---- lyric ----
 console.log('== lyric ==');
-const ly = H.lyric({ mid: isNe ? 'ne_1' : 'kg_ABCDEF0123456789', songId: isNe ? 1 : 11 });
+const ly = H.lyric(isFq
+  ? { mid: 'fq_7565796622534183961', mediaMid: '7565796622534183961', songId: 0 }
+  : { mid: isNe ? 'ne_1' : 'kg_ABCDEF0123456789', songId: isNe ? 1 : 11 });
 check('歌词非空', typeof ly === 'string' && ly.length > 0, ly);
+if (isFq) check('歌词为 LRC 行', ly.indexOf('[00:00.000]第一句') === 0, ly);
 
-// ---- qrLogin（mock 立即成功） ----
+// ---- qrLogin ----
 console.log('== qrLogin ==');
-const cred = H.qrLogin({});
-check('返回凭据', !!cred && !!cred.musickey, cred);
-check('发出 Success 事件', events.some((e) => e.type === 'Success'));
-const qrEvt = events.find((e) => e.type === 'QrReady');
-check('QrReady 含 text 或 b64', !!qrEvt && (!!qrEvt.text || !!qrEvt.b64), qrEvt);
-if (!isNe) {
-  // 酷狗换票必须携带 AES 密文 params 与 RSA 密文 pk（否则服务端不返回账号资料）
-  const tkUrl = lastUrls.find((u) => u.indexOf('login_by_token_get') >= 0) || '';
-  check('换票请求含 params', tkUrl.indexOf('params=') >= 0, tkUrl.slice(0, 120));
-  check('换票请求含 pk', tkUrl.indexOf('pk=') >= 0);
-  check('返回昵称', !!cred.nick, cred.nick);
-  check('返回头像', !!cred.avatarUrl, cred.avatarUrl);
+if (isFq) {
+  // 平台免登录，无扫码流程：如实返回 null（宿主不展示登录入口），不抛异常
+  check('qrLogin 返回 null', H.qrLogin({}) === null);
+} else {
+  const cred = H.qrLogin({});
+  check('返回凭据', !!cred && !!cred.musickey, cred);
+  check('发出 Success 事件', events.some((e) => e.type === 'Success'));
+  const qrEvt = events.find((e) => e.type === 'QrReady');
+  check('QrReady 含 text 或 b64', !!qrEvt && (!!qrEvt.text || !!qrEvt.b64), qrEvt);
+  if (!isNe) {
+    // 酷狗换票必须携带 AES 密文 params 与 RSA 密文 pk（否则服务端不返回账号资料）
+    const tkUrl = lastUrls.find((u) => u.indexOf('login_by_token_get') >= 0) || '';
+    check('换票请求含 params', tkUrl.indexOf('params=') >= 0, tkUrl.slice(0, 120));
+    check('换票请求含 pk', tkUrl.indexOf('pk=') >= 0);
+    check('返回昵称', !!cred.nick, cred.nick);
+    check('返回头像', !!cred.avatarUrl, cred.avatarUrl);
+  }
 }
 
 if (failed) { console.error('\nMOCK SMOKE FAILED'); process.exit(1); }

@@ -14,6 +14,9 @@ build/
 *.keystore
 crash.log
 
+# 正式签名配置（含密钥口令，严禁提交）
+keystore.properties
+
 # UI 验证临时截图
 .ui-check/
 /*.png
@@ -24,6 +27,9 @@ crash.log
 # 音乐源签名私钥（仅开发者本地保存，公钥随仓库提交）
 tools/source-signing/source_signing_private.key
 
+# COS 上传凭证（云密钥，严禁提交）
+tools/cos-upload.local.json
+
 # QPlay 抓包日志：含用户 uin 与 vkey 直链，严禁提交
 tools/qplay_probe/*.log
 
@@ -31,3 +37,4 @@ tools/qplay_probe/*.log
 .qoder/
 .vscode/
 .trae/
+.trae-html-share-packages/

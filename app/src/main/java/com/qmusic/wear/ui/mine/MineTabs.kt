@@ -41,7 +41,7 @@ internal fun MineTabs(
     logged: Boolean,
     query: String,
     onQueryChange: (String) -> Unit,
-    onVoiceSearch: () -> Unit,
+    onRecognize: () -> Unit,
     onSearch: () -> Unit,
     history: List<String>,
     onPickHistory: (String) -> Unit,
@@ -49,6 +49,7 @@ internal fun MineTabs(
     onOpenRecent: () -> Unit,
     onOpenPlaylist: (Long, String) -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenLocalMusic: () -> Unit = {},
     onOpenSettings: () -> Unit,
     onOpenPodcast: () -> Unit,
     onOpenSocial: () -> Unit,
@@ -59,6 +60,7 @@ internal fun MineTabs(
     val caps by com.qmusic.wear.data.source.SourceManager.capabilitiesFlow.collectAsStateWithLifecycle()
     val supportsPodcast = caps.contains("djRadios")
     val supportsSocial = caps.contains("userEvents") || caps.contains("userFollows")
+    val supportsRecognize = caps.contains("recognizeSong")
 
     // ScalingLazyColumn：圆屏自适应缩放 + 与首页一致的滚动体验；
     // 表冠滚动走内置支持（外挂 rotaryScrollable 会与内置焦点协调抢焦点，已废弃）。
@@ -75,7 +77,7 @@ internal fun MineTabs(
         verticalArrangement = Arrangement.spacedBy(6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        mineListHeader(query, onQueryChange, onVoiceSearch, onSearch, history, onPickHistory)
+        mineListHeader(query, onQueryChange, onRecognize, supportsRecognize, onSearch, history, onPickHistory)
         mineStatusRows(sessionBad, logged, onOpenSettings)
         mineLibraryRows(
             ui = ui,
@@ -89,7 +91,7 @@ internal fun MineTabs(
             onOpenPodcast = onOpenPodcast,
             onOpenSocial = onOpenSocial,
         )
-        mineEntryRows(ui, onOpenPlaylist, onOpenDownloads, onOpenSettings)
+        mineEntryRows(ui, onOpenPlaylist, onOpenDownloads, onOpenLocalMusic, onOpenSettings)
         item { Spacer(Modifier.height(4.dp)) }
     }
 }
@@ -98,7 +100,8 @@ internal fun MineTabs(
 private fun ScalingLazyListScope.mineListHeader(
     query: String,
     onQueryChange: (String) -> Unit,
-    onVoiceSearch: () -> Unit,
+    onRecognize: () -> Unit,
+    showRecognize: Boolean,
     onSearch: () -> Unit,
     history: List<String>,
     onPickHistory: (String) -> Unit,
@@ -117,8 +120,9 @@ private fun ScalingLazyListScope.mineListHeader(
         MineSearchField(
             query = query,
             onQueryChange = onQueryChange,
-            onVoiceSearch = onVoiceSearch,
+            onRecognize = onRecognize,
             onSearch = onSearch,
+            showRecognize = showRecognize,
         )
     }
     if (history.isNotEmpty()) {

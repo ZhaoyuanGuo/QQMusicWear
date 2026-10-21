@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用内更新安装包共享路径：外部私有目录为主，filesDir 兜底（external-files-dir 不可用的设备） -->
+<paths>
+    <external-files-path
+        name="apk_updates_ext"
+        path="updates/" />
+    <files-path
+        name="apk_updates_internal"
+        path="updates/" />
+</paths>

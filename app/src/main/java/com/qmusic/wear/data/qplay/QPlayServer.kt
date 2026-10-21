@@ -1,7 +1,6 @@
 package com.qmusic.wear.data.qplay
 
 import android.content.Context
-import android.os.Build
 import com.qmusic.wear.data.model.ResolvedUrl
 import com.qmusic.wear.data.model.Song
 import com.qmusic.wear.data.player.PlayerConnection
@@ -16,11 +15,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
@@ -38,52 +34,22 @@ import java.util.concurrent.atomic.AtomicInteger
 class QPlayServer(
     private val context: Context,
     private val player: PlayerConnection,
+    /** 新设备首次投放内容时回调（客户端 IP）；用于在手表上提示用户，非阻塞 */
+    private val onRemoteConnect: (String) -> Unit = {},
 ) {
     companion object {
         const val PORT = 49153
         private const val FRIENDLY_NAME = "QQMusicWear 手表"
         private const val UDN_KEY = "qplay_udn"
 
-        // UPnP XML 转义
-        private fun xmlEscape(s: String): String = s
-            .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            .replace("\"", "&quot;").replace("'", "&apos;")
-
-        private fun xmlUnescape(s: String): String = s
-            .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
-            .replace("&apos;", "'").replace("&amp;", "&")
-
-        private fun md5(s: String): String =
-            MessageDigest.getInstance("MD5").digest(s.toByteArray(Charsets.UTF_8))
-                .joinToString("") { "%02x".format(it) }
-
-        /** "H:MM:SS" / "M:SS" → 秒 */
-        private fun parseDuration(s: String): Int {
-            val parts = s.split(":").mapNotNull { it.toIntOrNull() }
-            if (parts.isEmpty()) return 0
-            return when (parts.size) {
-                3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]
-                2 -> parts[0] * 60 + parts[1]
-                else -> parts[0]
-            }
-        }
-
-        /** 毫秒 → H:MM:SS */
-        private fun hms(ms: Long): String {
-            val s = (ms / 1000).coerceAtLeast(0)
-            return "${s / 3600}:${(s % 3600) / 60 / 10}${(s % 3600) / 60 % 10}:${(s % 60) / 10}${s % 60}"
-        }
-
-        /** H:MM:SS → 毫秒 */
-        private fun toMs(hmsStr: String): Long {
-            val p = hmsStr.split(":").mapNotNull { it.toIntOrNull() }
-            if (p.isEmpty()) return 0
-            return when (p.size) {
-                3 -> (p[0] * 3600 + p[1] * 60 + p[2]).toLong() * 1000
-                2 -> (p[0] * 60 + p[1]).toLong() * 1000
-                else -> p[0].toLong() * 1000
-            }
-        }
+        // 协议解析（XML 转义 / 时间换算 / SOAP 参数 / TracksMetaData）统一在 QPlayProtocol，
+        // 此处仅做转发，便于纯 JVM 单测覆盖。
+        private fun xmlEscape(s: String): String = QPlayProtocol.xmlEscape(s)
+        private fun xmlUnescape(s: String): String = QPlayProtocol.xmlUnescape(s)
+        private fun md5(s: String): String = QPlayProtocol.md5(s)
+        private fun parseDuration(s: String): Int = QPlayProtocol.parseDuration(s)
+        private fun hms(ms: Long): String = QPlayProtocol.hms(ms)
+        private fun toMs(hmsStr: String): Long = QPlayProtocol.toMs(hmsStr)
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -118,6 +84,24 @@ class QPlayServer(
 
     /** 上次推送的 (状态#曲目) 指纹，去重用 */
     private var lastEventKey: String? = null
+
+    /**
+     * 已投放过的客户端 IP 集合（会话内）。
+     * 同一设备重复投放不再打扰；新设备首次投放时提示用户。
+     */
+    private val knownClients = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    /** 提取 IP（去掉端口），未知返回空串 */
+    private fun clientIp(remoteAddress: String): String = QPlayProtocol.clientIp(remoteAddress)
+
+    /** 新设备首次投放内容时提示用户；同 IP 只提示一次，且不阻塞 SOAP 响应 */
+    private fun notifyRemoteIfNew(remoteAddress: String) {
+        val ip = clientIp(remoteAddress)
+        if (ip.isEmpty()) return
+        if (!knownClients.add(ip)) return
+        android.util.Log.i("QPlayServer", "new remote client: $ip")
+        runCatching { onRemoteConnect(ip) }
+    }
 
     private data class QPlayTrack(
         val uri: String,
@@ -162,6 +146,7 @@ class QPlayServer(
         rcsSubs.clear()
         seqMap.clear()
         lastEventKey = null
+        knownClients.clear()
         scope?.cancel()
         scope = null
         android.util.Log.i("QPlayServer", "stopped")
@@ -385,6 +370,8 @@ class QPlayServer(
                     val raw = arg(body, "TracksMetaData")
                     val qid = arg(body, "QueueID")
                     loadQueue(raw, qid)
+                    // 新设备首次投放时提示用户（同网段设备可静默操控，需让用户知情）
+                    notifyRemoteIfNew(req.remoteAddress)
                     soapResponse(service, action, "<NumberOfSuccess>${tracks.size}</NumberOfSuccess>")
                 }
 
@@ -530,8 +517,7 @@ class QPlayServer(
         }
     }
 
-    private fun arg(body: String, name: String): String =
-        Regex("<$name>([\\s\\S]*?)</$name>").find(body)?.groupValues?.get(1)?.trim() ?: ""
+    private fun arg(body: String, name: String): String = QPlayProtocol.arg(body, name)
 
     private fun soapResponse(service: String, action: String, inner: String): String =
         """<?xml version="1.0" encoding="utf-8"?>
@@ -549,22 +535,18 @@ $inner
     private fun loadQueue(metaXmlEscaped: String, qid: String) {
         if (qid.isNotEmpty()) queueId = qid
         runCatching {
-            val root = json.parseToJsonElement(xmlUnescape(metaXmlEscaped)).jsonObject
-            val arr = root["TracksMetaData"]?.jsonArray ?: return
-            rawTracks = arr.map { it.jsonObject }
-            tracks = rawTracks.mapNotNull { o ->
-                val uri = (o["trackURIs"] as? JsonArray)?.firstOrNull()
-                    ?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
-                    ?: return@mapNotNull null
+            val parsed = QPlayProtocol.parseTracks(metaXmlEscaped)
+            rawTracks = parsed.raw
+            tracks = parsed.tracks.map {
                 QPlayTrack(
-                    uri = uri,
-                    title = o.str("title"),
-                    creator = o.str("creator"),
-                    album = o.str("album"),
-                    artUri = o.str("albumArtURI"),
-                    songId = o.str("songID"),
-                    durationSec = parseDuration(o.str("duration")),
-                    raw = o,
+                    uri = it.uri,
+                    title = it.title,
+                    creator = it.creator,
+                    album = it.album,
+                    artUri = it.artUri,
+                    songId = it.songId,
+                    durationSec = it.durationSec,
+                    raw = it.raw,
                 )
             }
             pendingIndex = 0

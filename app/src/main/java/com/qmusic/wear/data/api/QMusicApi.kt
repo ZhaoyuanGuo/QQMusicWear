@@ -8,6 +8,7 @@ import com.qmusic.wear.data.model.HomeCard
 import com.qmusic.wear.data.model.Playlist
 import com.qmusic.wear.data.model.Quality
 import com.qmusic.wear.data.model.RadioStation
+import com.qmusic.wear.data.model.RecognizeResult
 import com.qmusic.wear.data.model.ResolvedUrl
 import com.qmusic.wear.data.model.SearchResult
 import com.qmusic.wear.data.model.Song
@@ -25,6 +26,7 @@ import com.qmusic.wear.data.source.PlaylistDto
 import com.qmusic.wear.data.source.PlaylistDtoRef
 import com.qmusic.wear.data.source.RadioDto
 import com.qmusic.wear.data.source.ResolveResultDto
+import com.qmusic.wear.data.source.RecognizeResultDto
 import com.qmusic.wear.data.source.SearchResultDto
 import com.qmusic.wear.data.source.SongCommentsDto
 import com.qmusic.wear.data.source.SongDto
@@ -294,6 +296,19 @@ suspend fun QMusicApi.userFollows(uid: Long = 0L, limit: Int = 30, offset: Int =
         )
         .map { it.toModel() }
 
+/**
+ * 听歌识曲（源不支持时抛异常，由上层 runCatching 兜底为空结果）。
+ * audioB64：16kHz 单声道 16bit PCM 的 base64；durationMs 为录音实际时长。
+ */
+suspend fun QMusicApi.recognizeSong(audioB64: String, sampleRate: Int, durationMs: Long): RecognizeResult =
+    SourceDtos.json.decodeFromString(
+        RecognizeResultDto.serializer(),
+        call(
+            "recognizeSong",
+            args("audioB64" to audioB64, "sampleRate" to sampleRate, "durationMs" to durationMs),
+        ),
+    ).toModel()
+
 /** 排行榜列表 */
 suspend fun QMusicApi.toplists(): List<ToplistItem> =
     SourceDtos.json
@@ -356,6 +371,12 @@ data class Credential(
     val encryptUin: String = "",
     val nick: String = "",
     val avatarUrl: String = "",
+    /**
+     * 登录时服务端实际下发的鉴权 Cookie（`k=v; k=v` 形式），由源插件在请求里原样合并。
+     * 微信扫码登录的会话 Cookie 命名与 QQ 号体系不同（wx_key / login_type 等），
+     * 与其逐字段猜名，不如把当时拿到的整份存下来；QQ 扫码时同样回填（缺省为空即不额外发送）。
+     */
+    val authCookie: String = "",
     val createTime: Long = 0L,
     val keyExpiresIn: Long = 0L,
 ) {

@@ -267,4 +267,20 @@ private fun ScalingLazyListScope.settingsMiscSection(ui: SettingsUiState, vm: Se
             }
         }
     }
+    // 手动检查更新：有新版本时由全局弹窗承接，其余结果 Toast 提示（与「提取日志」同模式）
+    item {
+        GlassRow(onClick = { vm.checkUpdate() }) {
+            Icon(
+                painter = painterResource(R.drawable.ic_download),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(17.dp),
+            )
+            Spacer(Modifier.size(10.dp))
+            Text(
+                if (ui.updateCheckMessage == "") "检查中…" else "检查更新",
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+    }
 }

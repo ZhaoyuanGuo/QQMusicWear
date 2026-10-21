@@ -23,11 +23,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.qmusic.wear.data.source.SourceManager
 import com.qmusic.wear.data.source.SourceState
+import com.qmusic.wear.data.update.AppUpdateManager
+import com.qmusic.wear.data.update.AppUpdateState
 import com.qmusic.wear.ui.agreement.AgreementScreen
 import com.qmusic.wear.ui.components.LiveCapsule
 import com.qmusic.wear.ui.source.SourceGateScreen
 import com.qmusic.wear.ui.theme.LocalIsRoundScreen
 import com.qmusic.wear.ui.theme.LocalLowPerf
+import com.qmusic.wear.ui.update.AppUpdateDialog
 import kotlinx.coroutines.launch
 
 /**
@@ -107,6 +110,17 @@ internal fun AppRoot() {
         }
     }
 
+    // 应用更新：启动后台静默检查（24h 节流），新版本由全局弹窗承接
+    LaunchedEffect(Unit) { AppUpdateManager.checkOnLaunch() }
+    val updateState by AppUpdateManager.state.collectAsStateWithLifecycle()
+    val updateForced = when (val s = updateState) {
+        is AppUpdateState.Available -> s.forced
+        is AppUpdateState.Downloading -> AppUpdateManager.isForced(s.info)
+        is AppUpdateState.ReadyToInstall -> AppUpdateManager.isForced(s.info)
+        is AppUpdateState.Failed -> s.info?.let { AppUpdateManager.isForced(it) } == true
+        else -> false
+    }
+
     // 显示模式：开启屏幕常亮后，播放/歌词页保持屏幕点亮，离开页面自动清除
     val keepScreenOn by ServiceLocator.settingsStore.keepScreenOnFlow.collectAsStateWithLifecycle()
     DisposableEffect(nav.screen, keepScreenOn) {
@@ -155,6 +169,39 @@ internal fun AppRoot() {
                     .align(Alignment.BottomCenter)
                     // 圆表：底部留白避开弧边；方表：物理黑边承担边界，贴屏显示
                     .padding(bottom = if (isRoundScreen) 24.dp else 6.dp),
+            )
+        }
+
+        // ---- 应用更新全局弹窗：悬浮在所有页面之上（状态机驱动，Idle 不展示） ----
+        if (updateState is AppUpdateState.Available ||
+            updateState is AppUpdateState.Downloading ||
+            updateState is AppUpdateState.ReadyToInstall ||
+            (updateState is AppUpdateState.Failed && (updateState as AppUpdateState.Failed).info != null)
+        ) {
+            AppUpdateDialog(
+                state = updateState,
+                localVersionName = AppUpdateManager.localVersionName,
+                forced = updateForced,
+                onDownload = { AppUpdateManager.startDownload() },
+                onInstall = {
+                    AppUpdateManager.install()?.let { err ->
+                        android.widget.Toast.makeText(ctx, err, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                },
+                onCopyLink = {
+                    val url = AppUpdateManager.copyDownloadUrl()
+                    val msg = if (url.isEmpty()) {
+                        "暂无下载地址"
+                    } else {
+                        runCatching {
+                            val cm = ctx.getSystemService(android.content.ClipboardManager::class.java)
+                            cm?.setPrimaryClip(android.content.ClipData.newPlainText("apk", url))
+                        }
+                        "已复制下载地址，可在手机上打开安装"
+                    }
+                    android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+                },
+                onDismiss = { AppUpdateManager.dismiss() },
             )
         }
     }

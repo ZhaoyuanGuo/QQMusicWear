@@ -14,7 +14,7 @@ APK 只包含通用运行框架（Rhino JS 引擎 + 桥接 API），全部协议
   | `qmusic-web` | `qmusic_source.js` | QQ音乐 | `#31C27C` |
   | `kugou-web` | `kugou_source.js` | 酷狗音乐 | `#2BA3F0` |
   | `netease-web` | `netease_source.js` | 网易云音乐 | `#E23B2E` |
-  | `fanqie-web` | `fanqie_source.js` | 番茄畅听 | `#FF6A3D` |
+  | `fanqie-music-web` | `fanqie_music_source.js` | 番茄音乐 | `#FF6A3D` |
 
 - 宿主对每个源沿用同一套镜像基地址拼接 `文件名` 下载；切换源即切换曲库、
   登录态、主题色与首页推送。
@@ -61,15 +61,21 @@ resolveUrls, setLike, qrLogin`
 ### 可选 handler（新增能力）
 
 `artistAlbums, radioSongs, heartMode, djRadios, djPrograms, songComments,
-cloudSongs, userEvents, userFollows`
+cloudSongs, userEvents, userFollows, recognizeSong, wxLogin`
 
-- 这 9 个不在 `REQUIRED_HANDLERS` 内：源**实现了**才会被契约测试试调，未实现不报错
+- 这些不在 `REQUIRED_HANDLERS` 内：源**实现了**才会被契约测试试调，未实现不报错
   （QQ 源无需回填即可通过 CI）。
 - **宿主按注册表做能力探测**：`SourceEngine` 在加载源时记录已注册的 handler 名，
   经 `SourceManager.capabilitiesFlow` 下发 UI。**未实现的能力连入口都不显示**——
   例如未实现 `djRadios` 则「我的」页无「播客/电台」，未实现 `userEvents`/`userFollows`
-  则无「动态/关注」。因此「不实现」即可安全隐藏功能，无需在 manifest 里额外声明能力。
-  （QQ 源自 v13 起已实现 `songComments`，播放页评论钮可用。）
+  则无「动态/关注」，未实现 `wxLogin` 则登录页无「QQ / 微信」切换。
+  因此「不实现」即可安全隐藏功能，无需在 manifest 里额外声明能力。
+  （QQ 源自 v13 起已实现 `songComments`，v15 起已实现 `wxLogin`。）
+- `wxLogin`（微信扫码登录，QQ 源 v15）：事件流与返回结构与 `qrLogin` **完全同构**，
+  宿主复用同一套二维码状态机与凭据存储；不引入新的 DTO 字段，因此无需提升 `minAppVersion`。
+- 新增可选能力请同步补 `tools/contract-test/run.js` 的 `OPTIONAL_HANDLERS`；
+  登录链类 handler（`qrLogin`/`wxLogin`）**不要**加入盲试调，它们由
+  `tools/contract-test/login_flow.js` 用脚本化 mock 回环验证。
 - 未登录 / 源不支持时必须安全返回空列表或空对象（不得抛异常、不得返回 undefined）。
 - 数据契约见 `SourceDtos.kt`：`ArtistAlbumsDto` / `RadioDto` / `DjProgramDto` /
   `SongCommentsDto` / `UserEventDto` / `FollowUserDto`（`radioSongs`/`cloudSongs`/`heartMode` 返回 `SongDto[]`）。
@@ -79,7 +85,7 @@ cloudSongs, userEvents, userFollows`
 | 方法 | 签名 | 说明 |
 | --- | --- | --- |
 | `http` | `(method, url, headersJson, body, contentType, followRedirects, bodyB64) -> {status, location, setCookie[], body, bodyB64}` | 同步阻塞请求；二进制响应用响应的 `bodyB64`；请求体为二进制时传第 7 参 `bodyB64`（base64，优先于文本 `body`，避免 UTF-8 编码破坏密文） |
-| `credential` | `() -> {musicid, musickey, strMusicid, encryptUin, nick, avatarUrl, isLogged}` | 当前登录凭据快照 |
+| `credential` | `() -> {musicid, musickey, strMusicid, encryptUin, nick, avatarUrl, authCookie, isLogged}` | 当前登录凭据快照；`authCookie` 为登录时下发的鉴权 Cookie 原文（`k=v; k=v`），微信体系的 `wx_key`/`login_type` 等靠它原样带回 |
 | `md5` | `(s) -> hex` | UTF-8 MD5 |
 | `b64decode` | `(s) -> utf8 字符串` | 歌词等 base64 解码 |
 | `aesCbcHex` | `(plain, key, iv) -> hex` | AES-CBC/PKCS7，输出 hex；key/iv 按 Latin1 取字节（16 字节 key = AES-128，32 字节 = AES-256）。酷狗 web 登录包体、网易 weapi |
@@ -90,6 +96,7 @@ cloudSongs, userEvents, userFollows`
 | `log` | `(s)` | logcat `SourceJS` tag |
 | `guid` | `() -> string` | 安装期随机 guid |
 | `emit` | `(eventJson)` | 事件回调：扫码登录事件流 / 全局事件（见下） |
+| `cancelled` | `() -> bool` | 宿主是否已取消本次调用（离开登录页 / 切换扫码方式）。**长轮询 handler 必须每轮开头自查并立即返回**，否则会占住单线程引擎，下一次登录要排队等它跑完。宿主取消时**会同时掐断正在飞的 HTTP 请求**（该次 `http` 立即返回 `status:0`），因此不必等满 30s 超时才能腾出引擎。旧宿主未注入此原语，请按可选能力写：`typeof qmu.cancelled === 'function' && qmu.cancelled()` |
 | `register` | `({manifest, handlers})` | 源入口，脚本末尾调用一次 |
 
 > 摘要/加密类桥接按需扩展：实现新源若需要新的原语（如 RSA/AES），
@@ -97,13 +104,18 @@ cloudSongs, userEvents, userFollows`
 
 ## 3. 事件流
 
-- **扫码登录**：`qrLogin` handler 执行期间通过 `emit({type, ...})` 发
+- **扫码登录**：`qrLogin`（QQ 互联）/ `wxLogin`（微信开放平台）handler 执行期间通过 `emit({type, ...})` 发
   `QrReady{b64} / WaitingScan / ScannedConfirm / Expired / Refused / Success{credential} / Error{message}`，
   由 `QrLoginManager` 解析为领域事件。
   - `QrReady.b64` 为二维码 **PNG 原始字节的 base64**（宿主直接解码为 Bitmap 显示）；
     源的二维码接口若只返回字符串，请在 JS 内用二维码生成逻辑或源提供的图片接口转成 PNG。
-  - `Success.credential` 字段：`musicid`（数字 uid，未知填 0）、`musickey`（会话密钥/Cookie，
-    非空即视为已登录）、`strMusicid`、`encryptUin`（无则空串）、`nick`、`avatarUrl`。
+  - `Success.credential` / handler 返回值字段：`musicid`（数字 uid，未知填 0）、`musickey`（会话密钥/Cookie，
+    非空即视为已登录）、`strMusicid`（非数值账号的身份原文，如微信 openid）、`encryptUin`（无则空串）、
+    `nick`、`avatarUrl`、`authCookie`（登录时下发的鉴权 Cookie 原文，宿主加密后按源保存并在后续请求里回填）。
+  - 失败时 `Error.message` 建议带上可诊断的实际字段名/Cookie 名（协议漂移时用户反馈一次即可定位）。
+  - 事件回调**按调用绑定**：引擎在每次 handler 调用开跑时装上该调用的回调、返回时还原，
+    因此登录期间并发的业务调用（首页刷新、资料拉取等）不会抢走或清空登录的事件通道；
+    无回调时 `qmu.emit` 只留一条 `SourceEngine` 警告日志，不静默失败。
 - **凭据过期**：任意 handler 里 `emitGlobal('CredentialExpired')`
   （检测到 401/-460/2001 等且本地处于登录态），宿主清除凭据并 Toast 提示重登。
 
@@ -126,11 +138,11 @@ cloudSongs, userEvents, userFollows`
   - 网易云：详情 `l|m`(标准)/`h`(高品)/`sq`(无损)/`hr`(Hi-Res) 文件对象是否存在。
 - `Song.mid` 必须**全局唯一且稳定**，用于队列/历史/红心/下载/歌词缓存的主键。
   非 QQ 源务必加前缀避免与其它源碰撞：酷狗 `kg_<hash>`、网易云 `ne_<songId>`、
-  番茄 `fq_<itemId>`；QQ 保持原始 mid（兼容老用户数据）。
+  番茄音乐 `fq_<itemId>`；QQ 保持原始 mid（兼容老用户数据）。
 - 播放相关字段（`resolveUrls` 输入）按源自定义编码承载：
   - 酷狗：`mid = kg_<hash>`，`mediaMid = <encode_album_audio_id>`，`albumMid = <album_id>`。
   - 网易云：`mid = ne_<id>`，`songId = <id>`。
-  - 番茄：`mid = fq_<itemId>`，`songId = <itemId>`，`albumMid = <bookId>`。
+  - 番茄音乐：`mid = fq_<itemId>`，`songId = <itemId>`，`albumMid = <bookId>`。
 - `playlistDetail(disstid)`、`toplistSongs(topId)` 等入口的 id 为数字：
   非 QQ 源请把歌单/榜单/专辑的数字 id 映射到该字段。
 - `homeFeed` 返回 `{cards:[{id,title,subtitle,action,targetId,coverUrl,songName,singers,colorStart,colorEnd,songs[]}]}`；

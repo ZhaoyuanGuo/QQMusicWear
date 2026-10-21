@@ -52,8 +52,15 @@ const SAFE_HANDLERS = REQUIRED_HANDLERS.filter((n) => n !== 'qrLogin' && n !== '
  */
 const OPTIONAL_HANDLERS = [
   'artistAlbums', 'radioSongs', 'heartMode', 'djRadios', 'djPrograms',
-  'songComments', 'cloudSongs', 'userEvents', 'userFollows',
+  'songComments', 'cloudSongs', 'userEvents', 'userFollows', 'recognizeSong',
+  'wxLogin',
 ];
+
+/**
+ * 登录链 handler：真实流程是「取码 -> 轮询 -> 换票」，空参盲调只会撞进轮询或
+ * 在第一个断言点报错，测不出东西。改由 login_flow.js 用脚本化 mock 回环验证。
+ */
+const FLOW_HANDLERS = ['qrLogin', 'wxLogin'];
 
 /**
  * qmu.http 契约：宿主桥接返回 JSON 字符串，脚本内 http() 对其 JSON.parse。
@@ -149,9 +156,10 @@ if (registered) {
   }
 }
 
-// 5) 可选 handler 试调（源实现才试调；未实现不算失败）
+// 5) 可选 handler 试调（源实现才试调；未实现不算失败；登录链交给 login_flow.js）
 if (registered) {
   for (const name of OPTIONAL_HANDLERS) {
+    if (FLOW_HANDLERS.indexOf(name) >= 0) continue;
     const fn = registered.handlers[name];
     if (typeof fn !== 'function') continue;
     try {

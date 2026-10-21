@@ -277,3 +277,15 @@ internal data class HomeCardDto(
 internal data class HomeFeedDto(
     val cards: List<HomeCardDto> = emptyList(),
 )
+
+/** 听歌识曲返回值（recognizeSong 契约）：song 为空表示未识别到 */
+@Serializable
+internal data class RecognizeResultDto(
+    val song: SongDto? = null,
+    val confidence: Double = 0.0,
+) {
+    fun toModel() = com.qmusic.wear.data.model.RecognizeResult(
+        song = song?.toModel(),
+        confidence = confidence,
+    )
+}
