@@ -66,14 +66,19 @@ Wear OS 第三方音乐客户端（Kotlin + Jetpack Compose for Wear OS + Media3
 
 - **Wear OS 手表**：Wear OS 4+（推荐）
 - **非 Wear OS 手表**：Android 8.1（API 27）及以上也可运行（如小米手表、OPPO Watch 等，部分功能可能受限）
-- 各音乐源均支持扫码登录
+- 多数音乐源支持扫码登录（QQ音乐源可用 QQ 或微信）；番茄音乐 / 番茄畅听免登录可用
 
 ## 安装
 
-前往 [Releases](https://github.com/ZhaoyuanGuo/QQMusicWear/releases/latest) 下载最新版本 APK（页顶 Release 徽章即当前最新版，文件名形如 `QQMusicWear-v<版本号>.apk`），通过 adb 或文件传输安装到手表：
+两种方式任选其一，都得同一个最新版安装包：
+
+- **官方直链（始终指向最新版，无需盯版本号）**：<https://dl.suspect.top/qqmusicwear/apk/QQMusicWear-latest.apk>
+- **[Releases](https://github.com/ZhaoyuanGuo/QQMusicWear/releases/latest)**：页顶 Release 即当前最新版，可查阅历史版本
+
+下载后通过 adb 或文件传输安装到手表：
 
 ```bash
-# 将文件名替换为你下载的最新版 APK
+# 文件名形如 QQMusicWear-v<版本号>.apk（latest 链接下载到的就是当前版本号的文件）
 adb install QQMusicWear-v<版本号>.apk
 ```
 

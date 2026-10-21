@@ -1,13 +1,17 @@
 // 发布应用内更新：本地计算 APK 体积/MD5，生成 website/update/version.json
 // 用法（在项目根目录）：
-//   node tools/publish-update.js --apk QQMusicWear-v3.1.0.apk --code 42 --name 3.1.0 --notes "更新说明" [--min 30]
-// 之后把 website/update/version.json 与新 APK 一起 scp 上服务器（见输出提示 / publish-update.sh）
+//   node tools/publish-update.js --apk QQMusicWear-v3.1.0.apk --code 42 --name 3.1.0 --notes "更新说明"
+// 然后上传到 COS：
+//   node tools/cos-upload.js --apk QQMusicWear-v3.1.0.apk --version 3.1.0 \
+//        --site website/index.html --json website/update/version.json
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-// 轻量应用服务器 APK 直链前缀（与 AppUpdateManager.UPDATE_URLS 首选保持一致）
-const SERVER_BASE = 'http://111.229.33.249/qqmusicwear/update/';
+// APK 直链前缀：COS 自定义域名（带 CDN，国内可达）。
+// 旧的轻量服务器路径 http://111.229.33.249/qqmusicwear/update/ 已无文件（404），
+// 且 AppUpdateManager 会依次回退到 GitHub raw 的 version.json，故直链统一改走 COS。
+const SERVER_BASE = process.env.APK_BASE_URL || 'https://dl.suspect.top/qqmusicwear/apk/';
 
 function arg(name, fallback = undefined) {
   const i = process.argv.indexOf('--' + name);
@@ -41,6 +45,7 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, JSON.stringify(info, null, 2) + '\n', 'utf8');
 console.log(`已生成 ${out}:`);
 console.log(JSON.stringify(info, null, 2));
-console.log('\n下一步（上传到轻量服务器）：');
-console.log(`  scp ${out} ${apkPath} root@111.229.33.249:/tmp/qqmusicwear-update/`);
-console.log('  ssh root@111.229.33.249 "bash /tmp/publish-update.sh"');
+console.log('\n下一步（上传到 COS）：');
+console.log(`  node tools/cos-upload.js --apk ${apkPath} --version ${versionName} \\`);
+console.log('       --site website/index.html --json website/update/version.json');
+console.log('   （凭证走环境变量或 tools/cos-upload.local.json，不得写回仓库）');
