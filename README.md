@@ -1,6 +1,8 @@
 # QQMusicWear
 
-Wear OS 第三方音乐客户端（Kotlin + Jetpack Compose for Wear OS + Media3），内置 **QQ音乐 / 酷狗音乐 / 酷狗概念版 / 网易云音乐** 四种音乐源，一次加载一个——主题色、品牌名、桌面图标随源切换。专为手表小屏打造：圆表方表自适应、表冠导航、卡拉OK歌词，一只手、一块表即可完成从发现到播放的全部操作。
+Wear OS 第三方音乐客户端（Kotlin + Jetpack Compose for Wear OS + Media3），内置 **QQ音乐 / 酷狗音乐 / 酷狗概念版 / 网易云音乐 / 番茄音乐 / 番茄畅听** 六种音乐源，一次加载一个——主题色、品牌名、桌面图标随源切换。专为手表小屏打造：圆表方表自适应、表冠导航、卡拉OK歌词，一只手、一块表即可完成从发现到播放的全部操作。
+
+🏠 官网：<https://musicwear.suspect.top>　｜　📥 最新版直链：<https://dl.suspect.top/qqmusicwear/apk/QQMusicWear-latest.apk>
 
 [![source-contract](https://github.com/ZhaoyuanGuo/QQMusicWear/actions/workflows/source-contract.yml/badge.svg)](https://github.com/ZhaoyuanGuo/QQMusicWear/actions/workflows/source-contract.yml)
 [![Release](https://img.shields.io/github/v/release/ZhaoyuanGuo/QQMusicWear)](https://github.com/ZhaoyuanGuo/QQMusicWear/releases/latest)
@@ -72,6 +74,7 @@ Wear OS 第三方音乐客户端（Kotlin + Jetpack Compose for Wear OS + Media3
 
 两种方式任选其一，都得同一个最新版安装包：
 
+- **官网**：<https://musicwear.suspect.top>（独立子域名，HTTP 强制 301 到 HTTPS，泛域名证书 + HTTP/2）
 - **官方直链（始终指向最新版，无需盯版本号）**：<https://dl.suspect.top/qqmusicwear/apk/QQMusicWear-latest.apk>
 - **[Releases](https://github.com/ZhaoyuanGuo/QQMusicWear/releases/latest)**：页顶 Release 即当前最新版，可查阅历史版本
 

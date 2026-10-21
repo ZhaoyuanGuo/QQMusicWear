@@ -59,8 +59,11 @@
   （`PlaybackFallback` / `QPlayProtocol` / `SecretBox` / `SongJson`），配套 JVM 单测
 - 构建插件与依赖版本集中到 `gradle/libs.versions.toml` 版本目录，根构建脚本改用 alias 引用
 - CI 双门禁：宿主门禁新增 Android Lint 检查（失败时上传报告产物），源门禁接入登录链 mock 回环测试
-- 新增官网与发布工具链：`website/`（产品介绍页 + 截图 + Nginx 站点与部署脚本）、
+- 新增官网与发布工具链：独立子域名 <https://musicwear.suspect.top>（HTTP 强制 301 到 HTTPS，
+  复用 `*.suspect.top` 泛域名证书 + HTTP/2，拆为单独 vhost 文件不再动共享配置），
+  `website/`（介绍页 + 截图 + Nginx 站点与部署脚本）、
   `tools/publish-update.js`（本地计算 APK 体积/MD5 并生成 `version.json`）、`tools/cos-upload.js`
+  （写走桶默认域名、读走 CDN，并维护 `QQMusicWear-latest.apk` 别名与整站资源）
 
 ## 3.0.0 (2026-10-03)
 
